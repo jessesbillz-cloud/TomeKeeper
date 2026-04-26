@@ -12,6 +12,7 @@
 import { supabase } from "./supabase";
 
 const BASE = import.meta.env.VITE_API_BASE_URL;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!BASE) {
   throw new Error(
@@ -44,6 +45,7 @@ export async function api<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(ANON_KEY ? { apikey: ANON_KEY } : {}),
     ...(init.headers as Record<string, string> | undefined),
     ...(await authHeader()),
   };
