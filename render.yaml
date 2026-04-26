@@ -1,0 +1,29 @@
+# Render Blueprint — auto-creates the backend service when you connect this
+# repo to Render. https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: tomekeeper-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -e ."
+    startCommand: "python -m uvicorn tomekeeper.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Fill these in via the Render dashboard after the service is created.
+      # `sync: false` means Render will prompt for them rather than syncing
+      # from a shared environment group.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DEV_NO_AUTH
+        value: "false"

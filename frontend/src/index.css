@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App-wide tweaks. Dark / pink theme. */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #000;
+  color: rgb(251 207 232); /* pink-200 */
+}
+
+/* A reusable card surface: dark panel with a soft white halo so it
+   feels lifted off the black background. */
+@layer components {
+  .card {
+    background-color: rgb(24 24 27); /* zinc-900 */
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 6px 22px rgba(255, 255, 255, 0.08);
+  }
+}

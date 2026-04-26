@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>TomeKeeper · Calendar Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.25.6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    </style>
+  </head>
+  <body class="bg-zinc-50">
+    <div class="max-w-3xl mx-auto p-4">
+      <div class="mb-3 px-3 py-2 bg-amber-50 border border-amber-300 text-xs text-amber-900">
+        <strong>Preview mode.</strong> Mock data only — Heirloom, FairyLoot,
+        Illumicrate, Beehive, and Goldsboro events for the current month. The
+        real app pulls these from your Supabase via <code>/calendar</code>.
+      </div>
+      <div id="root"></div>
+    </div>
+
+    <script type="text/babel" data-presets="react">
+      const { useState, useMemo, useEffect } = React;
+
+      // ---------- shop colors (same logic as Home.tsx) ----------
+      const UNKNOWN_SHOP = "_none";
+      const SHOP_PALETTE = [
+        { dot: "bg-rose-500",    chip: "bg-rose-100 text-rose-900" },
+        { dot: "bg-amber-500",   chip: "bg-amber-100 text-amber-900" },
+        { dot: "bg-emerald-500", chip: "bg-emerald-100 text-emerald-900" },
+        { dot: "bg-sky-500",     chip: "bg-sky-100 text-sky-900" },
+        { dot: "bg-violet-500",  chip: "bg-violet-100 text-violet-900" },
+        { dot: "bg-fuchsia-500", chip: "bg-fuchsia-100 text-fuchsia-900" },
+        { dot: "bg-teal-500",    chip: "bg-teal-100 text-teal-900" },
+        { dot: "bg-orange-500",  chip: "bg-orange-100 text-orange-900" },
+      ];
+      const NEUTRAL = { dot: "bg-zinc-400", chip: "bg-zinc-100 text-zinc-700" };
+      const shopKey = (s) => (s && s.trim() ? s : UNKNOWN_SHOP);
+      const shopColor = (s) => {
+        if (!s || !s.trim()) return NEUTRAL;
+        let h = 5381;
+        for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+        return SHOP_PALETTE[h % SHOP_PALETTE.length];
+      };
+
+      // ---------- calendar helpers ----------
+      const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const EVENT_LABEL = {
+        release: "Release",
+        ship: "Ship",
+        deliver: "Deliver",
+        preorder_open: "Preorder opens",
+        preorder_close: "Preorder closes",
+        flash_sale: "Flash sale",
+      };
+      const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+      const endOfMonth   = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const addMonths    = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+      const isoDate = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      const sameDay = (a,b) =>
+        a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+      const buildGrid = (month) => {
+        const first = startOfMonth(month);
+        const start = new Date(first);
+        start.setDate(start.getDate() - first.getDay());
+        return Array.from({ length: 42 }, (_, i) => {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          return d;
+        });
+      };
+      const formatTime = (at) =>
+        new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+      // ---------- mock data: this month, all five shops ----------
+      function makeMockEvents() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        const at = (day, hour=12, min=0) => new Date(y, m, day, hour, min).toISOString();
+        const date = (day) => isoDate(new Date(y, m, day));
+
+        const events = [];
+
+        // Heirloom: monthly preorder window 1st->7th, flash sale 14-15
+        events.push({ date: date(1), type:"preorder_open",  title:"April Heirloom Box",
+          subtitle:"April monthly", shop:"Heirloom", at: at(1, 9, 0) });
+        events.push({ date: date(7), type:"preorder_close", title:"April Heirloom Box",
+          subtitle:"April monthly", shop:"Heirloom", at: at(7, 23, 59) });
+        events.push({ date: date(14), type:"flash_sale", title:"Heirloom anniversary sale",
+          subtitle:"Heirloom", shop:"Heirloom", at: at(14, 10, 0) });
+        events.push({ date: date(15), type:"flash_sale", title:"Heirloom anniversary sale",
+          subtitle:"Heirloom", shop:"Heirloom", at: null });
+        events.push({ date: date(20), type:"ship", title:"April Heirloom Box",
+          subtitle:"Heirloom", shop:"Heirloom" });
+
+        // FairyLoot: preorder 3-10, release 22, deliver 28
+        events.push({ date: date(3), type:"preorder_open",  title:"Iron Flame OE",
+          subtitle:"FairyLoot exclusive", shop:"FairyLoot", at: at(3, 11, 0) });
+        events.push({ date: date(10), type:"preorder_close", title:"Iron Flame OE",
+          subtitle:"FairyLoot exclusive", shop:"FairyLoot", at: at(10, 23, 59) });
+        events.push({ date: date(22), type:"release", title:"Iron Flame OE",
+          subtitle:"FairyLoot exclusive", shop:"FairyLoot" });
+        events.push({ date: date(28), type:"deliver", title:"Iron Flame OE",
+          subtitle:"FairyLoot", shop:"FairyLoot" });
+
+        // Illumicrate: drop on the 9th at 8 PM
+        events.push({ date: date(9), type:"preorder_open", title:"Powerless deluxe",
+          subtitle:"Illumicrate exclusive", shop:"Illumicrate", at: at(9, 20, 0) });
+        events.push({ date: date(9), type:"preorder_close", title:"Powerless deluxe",
+          subtitle:"Sells out fast", shop:"Illumicrate", at: at(9, 20, 30) });
+
+        // Beehive: signup window 5-12, release 25
+        events.push({ date: date(5), type:"preorder_open", title:"May Beehive — Romantasy",
+          subtitle:"Theme reveal", shop:"Beehive Books", at: at(5, 12, 0) });
+        events.push({ date: date(12), type:"preorder_close", title:"May Beehive — Romantasy",
+          subtitle:"Subscription closes", shop:"Beehive Books", at: at(12, 23, 59) });
+        events.push({ date: date(25), type:"release", title:"Cruel Crowns",
+          subtitle:"Beehive bookmark exclusive", shop:"Beehive Books" });
+
+        // Goldsboro: ship 18, deliver 24
+        events.push({ date: date(18), type:"ship", title:"GSFF April",
+          subtitle:"Goldsboro", shop:"Goldsboro" });
+        events.push({ date: date(24), type:"deliver", title:"GSFF April",
+          subtitle:"Goldsboro", shop:"Goldsboro" });
+        events.push({ date: date(15), type:"flash_sale", title:"Goldsboro spring clearance",
+          subtitle:"Goldsboro", shop:"Goldsboro", at: at(15, 9, 0) });
+
+        return events;
+      }
+
+      // ---------- the actual page (1:1 with Home.tsx) ----------
+      function Home() {
+        const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
+        const [selectedDate, setSelectedDate] = useState(() => new Date());
+        const [events] = useState(makeMockEvents);
+        const [activeShops, setActiveShops] = useState(null);
+
+        const shops = useMemo(() => {
+          const seen = new Set();
+          for (const ev of events) seen.add(shopKey(ev.shop));
+          return Array.from(seen).sort((a,b) => {
+            if (a === UNKNOWN_SHOP) return 1;
+            if (b === UNKNOWN_SHOP) return -1;
+            return a.localeCompare(b);
+          });
+        }, [events]);
+
+        const isShopActive = (k) => activeShops === null ? true : activeShops.has(k);
+        const toggleShop = (k) => {
+          setActiveShops((prev) => {
+            const base = prev ?? new Set(shops);
+            const next = new Set(base);
+            if (next.has(k)) next.delete(k); else next.add(k);
+            if (next.size === shops.length) return null;
+            if (next.size === 0) return null;
+            return next;
+          });
+        };
+
+        const filteredEvents = useMemo(
+          () => events.filter((ev) => isShopActive(shopKey(ev.shop))),
+          [events, activeShops],
+        );
+        const eventsByDay = useMemo(() => {
+          const map = new Map();
+          for (const ev of filteredEvents) {
+            if (!map.has(ev.date)) map.set(ev.date, []);
+            map.get(ev.date).push(ev);
+          }
+          return map;
+        }, [filteredEvents]);
+
+        const grid = useMemo(() => buildGrid(currentMonth), [currentMonth]);
+        const monthLabel = currentMonth.toLocaleDateString(undefined, { month:"long", year:"numeric" });
+        const today = new Date();
+        const selectedKey = isoDate(selectedDate);
+        const selectedEvents = eventsByDay.get(selectedKey) ?? [];
+
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h1 className="text-base font-semibold">{monthLabel}</h1>
+              <div className="flex gap-1">
+                <button onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+                  className="border border-zinc-300 px-2 py-0.5 text-sm hover:bg-zinc-100">‹ Prev</button>
+                <button onClick={() => { const n = new Date(); setCurrentMonth(startOfMonth(n)); setSelectedDate(n); }}
+                  className="border border-zinc-300 px-2 py-0.5 text-sm hover:bg-zinc-100">Today</button>
+                <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+                  className="border border-zinc-300 px-2 py-0.5 text-sm hover:bg-zinc-100">Next ›</button>
+              </div>
+            </div>
+
+            {shops.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                <button onClick={() => setActiveShops(null)}
+                  className={[
+                    "text-xs px-2 py-0.5 border",
+                    activeShops === null
+                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50",
+                  ].join(" ")}>All shops</button>
+                {shops.map((k) => {
+                  const c = shopColor(k === UNKNOWN_SHOP ? null : k);
+                  const on = isShopActive(k);
+                  return (
+                    <button key={k} onClick={() => toggleShop(k)}
+                      className={[
+                        "text-xs px-2 py-0.5 border flex items-center gap-1.5",
+                        on ? `${c.chip} border-transparent`
+                           : "bg-white text-zinc-400 border-zinc-200 hover:bg-zinc-50",
+                      ].join(" ")}>
+                      <span className={[
+                        "inline-block w-2 h-2 rounded-full",
+                        on ? c.dot : "bg-zinc-300",
+                      ].join(" ")} />
+                      {k === UNKNOWN_SHOP ? "Other" : k}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="grid grid-cols-7 border border-zinc-300 bg-white">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="border-b border-zinc-300 px-2 py-1 text-xs text-zinc-500 uppercase tracking-wide">{d}</div>
+              ))}
+              {grid.map((d) => {
+                const inMonth = d.getMonth() === currentMonth.getMonth();
+                const isToday = sameDay(d, today);
+                const isSelected = sameDay(d, selectedDate);
+                const dayEvents = eventsByDay.get(isoDate(d)) ?? [];
+                const dayShops = Array.from(new Set(dayEvents.map((ev) => shopKey(ev.shop))));
+                return (
+                  <button key={d.toISOString()} onClick={() => setSelectedDate(d)}
+                    className={[
+                      "min-h-[72px] border-t border-l border-zinc-200 px-2 py-1 text-left flex flex-col",
+                      "hover:bg-zinc-50",
+                      inMonth ? "bg-white" : "bg-zinc-50 text-zinc-400",
+                      isSelected ? "ring-1 ring-inset ring-zinc-900" : "",
+                    ].join(" ")}>
+                    <span className={["text-xs", isToday ? "font-semibold text-zinc-900" : ""].join(" ")}>
+                      {d.getDate()}
+                    </span>
+                    {dayShops.length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {dayShops.slice(0, 4).map((sk) => {
+                          const c = shopColor(sk === UNKNOWN_SHOP ? null : sk);
+                          return <span key={sk} title={sk === UNKNOWN_SHOP ? "Other" : sk}
+                            className={["inline-block w-2 h-2 rounded-full", c.dot].join(" ")} />;
+                        })}
+                        {dayShops.length > 4 && (
+                          <span className="text-[10px] text-zinc-500">+{dayShops.length - 4}</span>
+                        )}
+                      </span>
+                    )}
+                    {dayEvents.length > 0 && (
+                      <span className="mt-auto text-[11px] text-zinc-500">
+                        {dayEvents.length} {dayEvents.length === 1 ? "event" : "events"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4">
+              <h2 className="text-sm font-semibold mb-2">
+                {selectedDate.toLocaleDateString(undefined, { weekday:"long", month:"long", day:"numeric", year:"numeric" })}
+              </h2>
+              {selectedEvents.length === 0 && (
+                <p className="text-sm text-zinc-500">No events.</p>
+              )}
+              {selectedEvents.length > 0 && (
+                <ul className="border border-zinc-300 divide-y divide-zinc-200 bg-white">
+                  {selectedEvents.map((ev, i) => {
+                    const c = shopColor(ev.shop);
+                    return (
+                      <li key={i} className="px-3 py-2 flex items-baseline gap-3">
+                        <span title={ev.shop ?? "Other"}
+                          className={["inline-block w-2 h-2 rounded-full mt-1.5 shrink-0", c.dot].join(" ")} />
+                        <span className="text-[11px] uppercase tracking-wide text-zinc-500 w-28 shrink-0">
+                          {EVENT_LABEL[ev.type]}
+                        </span>
+                        <span className="flex-1 text-sm">
+                          {ev.title}
+                          {ev.subtitle && (
+                            <span className="text-xs text-zinc-500 ml-2">{ev.subtitle}</span>
+                          )}
+                        </span>
+                        {ev.at && (
+                          <span className="text-xs text-zinc-700 tabular-nums">{formatTime(ev.at)}</span>
+                        )}
+                        {ev.shop && (
+                          <span className={["text-[11px] px-1.5 py-0.5", c.chip].join(" ")}>{ev.shop}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<Home />);
+    </script>
+  </body>
+</html>
