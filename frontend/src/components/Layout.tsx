@@ -1,6 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
-
-import { PhotoCaptureButton } from "./PhotoCaptureButton";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   [
@@ -11,6 +9,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   ].join(" ");
 
 export function Layout() {
+  const navigate = useNavigate();
   return (
     <div className="min-h-screen flex flex-col bg-black">
       <header className="border-b border-zinc-800 bg-black shadow-[0_2px_12px_rgba(255,255,255,0.06)]">
@@ -22,18 +21,21 @@ export function Layout() {
             </span>
           </div>
           {/* Bottom row: nav, also centered so it lives directly under the title */}
-          <nav className="flex justify-center">
+          <nav className="flex justify-center flex-wrap">
             <NavLink to="/" end className={navLinkClass}>
               Home
             </NavLink>
             <NavLink to="/library" className={navLinkClass}>
               Library
             </NavLink>
-            <NavLink to="/capture" className={navLinkClass}>
-              Capture
+            <NavLink to="/assistant" className={navLinkClass}>
+              Assistant
             </NavLink>
             <NavLink to="/flash-sales" className={navLinkClass}>
               Flash sales
+            </NavLink>
+            <NavLink to="/subscriptions" className={navLinkClass}>
+              Subscriptions
             </NavLink>
           </nav>
         </div>
@@ -43,19 +45,20 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Global floating "take photo" button — visible on every screen.
-          Centered along the bottom so it sits in the natural thumb zone for
-          one-handed use, with a safe-area-inset margin so it never collides
-          with the iPhone home indicator. Tap to open the rear camera; once a
-          photo is captured the user is navigated to /capture with the image
-          attached as router state. */}
-      <PhotoCaptureButton
-        to="/capture"
-        label="📷"
-        mode="camera"
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-16 h-16 rounded-full bg-pink-500 text-black text-3xl shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 disabled:opacity-50 flex items-center justify-center"
+      {/* Global floating "✨ Assistant" button — replaces the old "📷"
+          photo button. Tap to open the universal entry point that
+          accepts text + screenshots + cover photos. The Capture form is
+          still reachable from the nav for manual entry; the assistant
+          handles every other flow. */}
+      <button
+        type="button"
+        onClick={() => navigate("/assistant")}
+        aria-label="Open Book Assistant"
+        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-pink-500 text-black text-2xl shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 flex items-center justify-center"
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
-      />
+      >
+        ✨
+      </button>
     </div>
   );
 }

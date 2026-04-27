@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { post, ApiError } from "../lib/api";
+import { ProcessingBanner } from "./ProcessingBanner";
 
 type Props = {
   /** Where to send the captured photo. Defaults to /capture. */
@@ -23,11 +24,37 @@ type Props = {
   mode?: "camera" | "library";
   /**
    * If true, after the user picks an image, POST it to /scan-screenshot
-   * (Claude vision) and forward the extracted fields as well as the
-   * thumbnail to /capture so the form lands prefilled. The button label
-   * temporarily shows "Scanning…" while the request is in flight.
+   * (Claude vision) and forward the extracted fields to /capture so the
+   * form lands prefilled. If the model identifies multiple books in the
+   * screenshot (a list / roundup), we bulk-create all of them via the
+   * /works /editions /library endpoints and navigate to Home with a
+   * "Added N events" banner instead.
    */
   aiScan?: boolean;
+};
+
+type ScanItem = {
+  title?: string | null;
+  author?: string | null;
+  series?: string | null;
+  series_number?: number | null;
+  edition_name?: string | null;
+  publisher_or_shop?: string | null;
+  retailer?: string | null;
+  release_date?: string | null;
+  isbn?: string | null;
+  edition_size?: number | null;
+  special_features?: string | null;
+  preorder_start_at?: string | null;
+  preorder_end_at?: string | null;
+  notes?: string | null;
+};
+
+type ScanResponse = {
+  items?: ScanItem[];
+  fields?: ScanItem | null;
+  raw?: string;
+  detail?: string;
 };
 
 /**
@@ -64,12 +91,88 @@ async function fileToScanDataUrl(file: File): Promise<string> {
   return fileToResizedDataUrl(file, 1200, 0.85);
 }
 
-/** Shape returned by the scan-screenshot edge function. */
-type ScanResult = {
-  fields: Record<string, string | number | null> | null;
-  raw?: string;
-  detail?: string;
-};
+/** Util: trim, return null if the result is empty. */
+function nz(s: string | null | undefined): string | null {
+  if (s == null) return null;
+  const t = String(s).trim();
+  return t === "" ? null : t;
+}
+
+/**
+ * Bulk-create one work + edition + library_entry per item. We swallow
+ * per-item errors so a single bad row doesn't abort the whole batch and
+ * Janelle still ends up with most of the screenshot saved. Returns the
+ * number of items successfully written.
+ */
+async function bulkSaveItems(
+  items: ScanItem[],
+  onProgress: (done: number, total: number) => void,
+): Promise<{ saved: number; errors: string[] }> {
+  let saved = 0;
+  const errors: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    onProgress(i, items.length);
+    if (!item || !nz(item.title ?? null)) {
+      errors.push(`Item ${i + 1}: skipped (no title)`);
+      continue;
+    }
+    try {
+      const work = await post<{ id: string }>("/works", {
+        title: nz(item.title)!,
+        author: nz(item.author),
+        series: nz(item.series),
+        series_number:
+          typeof item.series_number === "number"
+            ? item.series_number
+            : null,
+        base_description: null,
+        original_pub_year: null,
+      });
+      const edition = await post<{ id: string }>("/editions", {
+        work_id: work.id,
+        // Backend requires edition_name. Default if AI didn't pick one up.
+        edition_name: nz(item.edition_name) ?? "Special edition",
+        publisher_or_shop: nz(item.publisher_or_shop),
+        retailer: nz(item.retailer),
+        cover_url: null,
+        release_date: nz(item.release_date),
+        release_time: null,
+        release_timezone: null,
+        edition_size:
+          typeof item.edition_size === "number"
+            ? item.edition_size
+            : null,
+        special_features: nz(item.special_features),
+        isbn: nz(item.isbn),
+        preorder_start_at: nz(item.preorder_start_at),
+        preorder_end_at: nz(item.preorder_end_at),
+      });
+      await post("/library", {
+        edition_id: edition.id,
+        status: "upcoming",
+        condition: null,
+        personal_photo_url: null,
+        purchase_price: null,
+        sale_price: null,
+        sale_notes: null,
+        buyer_info: null,
+        notes: nz(item.notes),
+      });
+      saved += 1;
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : String(e);
+      errors.push(`Item ${i + 1} (${item.title ?? "untitled"}): ${msg}`);
+    }
+  }
+  onProgress(items.length, items.length);
+  return { saved, errors };
+}
 
 export function PhotoCaptureButton({
   to = "/capture",
@@ -83,12 +186,17 @@ export function PhotoCaptureButton({
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [working, setWorking] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  // High-level status we surface in the global banner. Empty string =
+  // hide the banner.
+  const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  function buildDest(): string {
+  function buildDest(extra?: Record<string, string>): string {
     const params = new URLSearchParams(searchParams ?? {});
     params.set("from", aiScan ? "ai" : "photo");
+    if (extra) {
+      for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    }
     const qs = params.toString();
     return qs ? `${to}?${qs}` : to;
   }
@@ -109,11 +217,11 @@ export function PhotoCaptureButton({
 
       // AI mode: send a higher-fidelity copy to the scan function so the
       // model can actually read text in the screenshot.
-      setScanning(true);
+      setStatus("Scanning your screenshot…");
       const scanDataUrl = await fileToScanDataUrl(file);
-      let scan: ScanResult | null = null;
+      let scan: ScanResponse | null = null;
       try {
-        scan = await post<ScanResult>("/scan-screenshot", {
+        scan = await post<ScanResponse>("/scan-screenshot", {
           image_data_url: scanDataUrl,
         });
       } catch (apiErr) {
@@ -125,6 +233,7 @@ export function PhotoCaptureButton({
             : apiErr instanceof Error
               ? apiErr.message
               : String(apiErr);
+        setStatus("");
         navigate(buildDest(), {
           state: {
             photoDataUrl: thumbDataUrl,
@@ -134,31 +243,66 @@ export function PhotoCaptureButton({
         return;
       }
 
-      navigate(buildDest(), {
-        state: {
-          photoDataUrl: thumbDataUrl,
-          scanFields: scan?.fields ?? null,
-          scanError: scan?.fields ? null : (scan?.detail ?? null),
-        },
+      const items = scan?.items ?? (scan?.fields ? [scan.fields] : []);
+      const usable = items.filter((it) => nz(it?.title ?? null));
+
+      if (usable.length === 0) {
+        // Nothing identifiable — drop on Capture with an error banner.
+        setStatus("");
+        navigate(buildDest(), {
+          state: {
+            photoDataUrl: thumbDataUrl,
+            scanError:
+              scan?.detail ??
+              "Couldn't identify any books in that screenshot.",
+          },
+        });
+        return;
+      }
+
+      if (usable.length === 1) {
+        // Single-item: keep the review-and-save flow Janelle already knows.
+        setStatus("");
+        navigate(buildDest(), {
+          state: {
+            photoDataUrl: thumbDataUrl,
+            scanFields: usable[0],
+            scanError: null,
+          },
+        });
+        return;
+      }
+
+      // Multi-item: bulk-create silently, then navigate Home with a
+      // success banner. We update the status banner with progress so the
+      // user can see something is happening for the few seconds this takes.
+      const { saved, errors } = await bulkSaveItems(usable, (done, total) => {
+        setStatus(`Adding ${done} of ${total} to your calendar…`);
       });
+      setStatus("");
+      const params = new URLSearchParams();
+      params.set("added", String(saved));
+      if (errors.length) params.set("addedErrors", String(errors.length));
+      navigate(`/?${params.toString()}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setWorking(false);
-      setScanning(false);
+      setStatus("");
       // Allow re-selecting the same file later.
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
-  const buttonLabel = scanning
-    ? "✨ Scanning…"
-    : working
-      ? "Processing…"
-      : label;
+  const buttonLabel = working
+    ? status
+      ? "✨ Working…"
+      : "Processing…"
+    : label;
 
   return (
     <>
+      <ProcessingBanner show={Boolean(status)} message={status} />
       <button
         type="button"
         disabled={working}

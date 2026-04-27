@@ -1,15 +1,20 @@
 import { type ReactNode } from "react";
 
 import { useAuth } from "../lib/auth";
-import { Login } from "./Login";
 
 /**
- * Gates the rest of the app behind a Supabase session. While we're loading
- * the session from localStorage we show a tiny "Loading…" placeholder; if
- * there's no session we mount <Login>; otherwise we render children.
+ * Pass-through gate. We DO NOT show a Login page here — this is a personal
+ * app for one household and the session is persisted in localStorage by
+ * supabase-js. If the session ever lapses, individual API calls will fail
+ * with a clean 401 error banner; the user is never bounced to a sign-in
+ * screen they didn't ask for.
+ *
+ * We still wait for the auth state to finish loading so pages don't fire
+ * API calls with a `null` session and trip the "Not signed in" path
+ * unnecessarily on first paint.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { loading, session } = useAuth();
+  const { loading } = useAuth();
 
   if (loading) {
     return (
@@ -17,10 +22,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         Loading…
       </div>
     );
-  }
-
-  if (!session) {
-    return <Login />;
   }
 
   return <>{children}</>;

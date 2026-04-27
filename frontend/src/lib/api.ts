@@ -46,14 +46,15 @@ async function authHeaderOrThrow(): Promise<Record<string, string>> {
     if (session.expires_at - nowSec < 60) {
       const { data: refreshed, error: refreshErr } =
         await supabase.auth.refreshSession();
-      if (refreshErr || !refreshed.session) {
-        // Refresh token is also expired/invalid. Sign the user out so the
-        // AuthGate flips back to <Login> on the next render.
-        await supabase.auth.signOut();
-        session = null;
-      } else {
+      if (!refreshErr && refreshed.session) {
         session = refreshed.session;
       }
+      // If refresh failed we deliberately KEEP the existing session in
+      // place — the user has explicitly told us they don't want to be
+      // bounced to a Login page when something hiccups. The current
+      // request will just fail with a 401 and the user can try again
+      // (or hard-refresh the PWA, which usually re-establishes the
+      // session from the stored refresh token).
     }
   }
 

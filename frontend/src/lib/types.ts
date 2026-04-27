@@ -112,6 +112,22 @@ export interface PublisherSalesEvent {
   updated_at: ISODateTime;
 }
 
+export interface Subscription {
+  id: UUID;
+  user_id: UUID;
+  provider: string;
+  monthly_cost: string | null; // Decimal serialized as string
+  renewal_date: ISODate | null;
+  website: string | null;
+  notes: string | null;
+  last_checked_at: ISODateTime | null;
+  next_known_release: ISODate | null;
+  next_known_title: string | null;
+  next_known_notes: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 export type CalendarEventType =
   | "release"
   | "ship"

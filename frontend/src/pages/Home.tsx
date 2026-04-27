@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { CalendarSubscribe } from "../components/CalendarSubscribe";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
+import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
 import { get } from "../lib/api";
+import { lookupIsbn } from "../lib/isbnLookup";
 import type { CalendarEvent, CalendarEventType } from "../lib/types";
 
 /**
@@ -172,9 +174,27 @@ export function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  // Background work shown via the global ProcessingBanner. Empty = hide.
+  const [bannerStatus, setBannerStatus] = useState<string>("");
 
   // null = "show all shops". Non-null = whitelist of shop keys to show.
   const [activeShops, setActiveShops] = useState<Set<string> | null>(null);
+
+  // Read ?added=N&addedErrors=M off the URL — set by PhotoCaptureButton
+  // after a multi-item screenshot bulk-save. We surface a one-shot success
+  // banner the first time the user lands here with that param, then clear
+  // it on dismiss.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const addedCountStr = searchParams.get("added");
+  const addedErrorsStr = searchParams.get("addedErrors");
+  const addedCount = addedCountStr ? parseInt(addedCountStr, 10) : null;
+  const addedErrors = addedErrorsStr ? parseInt(addedErrorsStr, 10) : null;
+  function dismissAddedBanner() {
+    const next = new URLSearchParams(searchParams);
+    next.delete("added");
+    next.delete("addedErrors");
+    setSearchParams(next, { replace: true });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -258,9 +278,44 @@ export function Home() {
 
   return (
     <div>
+      <ProcessingBanner show={Boolean(bannerStatus)} message={bannerStatus} />
       <div className="mb-3">
         <CalendarSubscribe />
       </div>
+
+      {/* One-shot success banner after a multi-item AI screenshot scan
+          drops the user back here with ?added=N. Shows a count plus, if
+          any rows failed during the bulk save, a soft warning so Janelle
+          knows to spot-check the calendar. Dismissible via × — the URL is
+          rewritten to drop the query so a refresh doesn't bring it back. */}
+      {addedCount !== null && addedCount > 0 && (
+        <div
+          role="status"
+          className="mb-3 flex items-start gap-2 border border-pink-400 bg-pink-950/40 text-pink-100 px-3 py-2 text-sm"
+        >
+          <span aria-hidden>✨</span>
+          <div className="flex-1">
+            <div className="font-medium">
+              Added {addedCount} event{addedCount === 1 ? "" : "s"} to your
+              calendar.
+            </div>
+            {addedErrors !== null && addedErrors > 0 && (
+              <div className="text-xs text-amber-200 mt-0.5">
+                {addedErrors} item{addedErrors === 1 ? "" : "s"} couldn't be
+                saved — check the screenshot and add anything missing by hand.
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={dismissAddedBanner}
+            aria-label="Dismiss"
+            className="text-pink-300 hover:text-pink-100 text-base leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-base font-semibold text-pink-200">{monthLabel}</h1>
@@ -444,12 +499,71 @@ export function Home() {
                 return;
               }
               setScanError(null);
-              const params = new URLSearchParams({
-                isbn,
-                from: "scan",
-                release_date: selectedKey,
-              });
-              navigate(`/capture?${params.toString()}`);
+              // Fire-and-forget the lookup so the QR modal closes
+              // immediately and the user gets a "looking up…" banner
+              // while we hit Open Library / Google Books. Whatever we
+              // find (or don't) gets forwarded into Capture's location
+              // state so the form lands prefilled — no extra tap.
+              setBannerStatus("🔎 Looking up ISBN…");
+              void (async () => {
+                try {
+                  const result = await lookupIsbn(isbn);
+                  const params = new URLSearchParams({
+                    isbn,
+                    from: "scan",
+                    release_date: selectedKey,
+                  });
+                  // Mirror the AI flow's location.state shape so Capture
+                  // can use the same prefill code path.
+                  const scanFields = result
+                    ? {
+                        title: result.title,
+                        author: result.author,
+                        series: result.series,
+                        series_number: result.series_number,
+                        edition_name: result.edition_name,
+                        publisher_or_shop: result.publisher_or_shop,
+                        retailer: result.retailer,
+                        release_date: result.release_date,
+                        isbn: result.isbn ?? isbn,
+                        edition_size: result.edition_size,
+                        special_features: result.special_features,
+                        preorder_start_at: result.preorder_start_at,
+                        preorder_end_at: result.preorder_end_at,
+                        notes: result.notes,
+                      }
+                    : null;
+                  navigate(`/capture?${params.toString()}`, {
+                    state: {
+                      // Carry the cover the lookup found (if any) into
+                      // Capture so it lands as cover_url.
+                      photoDataUrl: result?.cover_url ?? undefined,
+                      scanFields,
+                      scanError:
+                        result && result.title
+                          ? null
+                          : "Couldn't find this ISBN online. Fill in the rest by hand.",
+                    },
+                  });
+                } catch (e) {
+                  // Network / parse failures land on Capture with just
+                  // the ISBN prefilled; user can keep going.
+                  const params = new URLSearchParams({
+                    isbn,
+                    from: "scan",
+                    release_date: selectedKey,
+                  });
+                  navigate(`/capture?${params.toString()}`, {
+                    state: {
+                      scanFields: null,
+                      scanError:
+                        e instanceof Error ? e.message : String(e),
+                    },
+                  });
+                } finally {
+                  setBannerStatus("");
+                }
+              })();
             }}
           />
         </div>
