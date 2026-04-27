@@ -15,6 +15,7 @@ interface CalendarEvent {
   library_entry_id?: string | null;
   order_id?: string | null;
   flash_sale_id?: string | null;
+  publisher_sale_event_id?: string | null;
 }
 
 function safeDate(value: string | null | undefined): string | null {
@@ -50,9 +51,15 @@ Deno.serve(async (req: Request) => {
 
   const events: CalendarEvent[] = [];
 
-  // Run all 5 queries in parallel
-  const [resLibrary, resPreorders, resFlashSales, resShips, resDeliveries] =
-    await Promise.all([
+  // Run all 6 queries in parallel
+  const [
+    resLibrary,
+    resPreorders,
+    resFlashSales,
+    resPublisherEvents,
+    resShips,
+    resDeliveries,
+  ] = await Promise.all([
       // 1. Releases from upcoming library entries
       supabase
         .from("library_entries")
@@ -83,7 +90,14 @@ Deno.serve(async (req: Request) => {
         .lte("starts_at", endDt)
         .gte("ends_at", startDt),
 
-      // 4. Ships
+      // 4. Publisher sales events overlapping the window
+      supabase
+        .from("publisher_sales_events")
+        .select("id, publisher, title, url, starts_at, ends_at, edition_id")
+        .lte("starts_at", endDt)
+        .gte("ends_at", startDt),
+
+      // 5. Ships
       supabase
         .from("orders")
         .select(
@@ -94,7 +108,7 @@ Deno.serve(async (req: Request) => {
         .gte("ship_date", startParam)
         .lte("ship_date", endParam),
 
-      // 5. Deliveries
+      // 6. Deliveries
       supabase
         .from("orders")
         .select(
@@ -194,7 +208,47 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // 4. Ships
+  // 4. Publisher sales events — start + end markers (long sales would
+  //    visually overwhelm the day grid if we expanded to one chip per day,
+  //    so we just mark the start and end and the iCal feed renders them
+  //    as proper multi-day events).
+  for (const row of resPublisherEvents.data ?? []) {
+    const r = row as Record<string, unknown>;
+    const sAt = r.starts_at as string | null;
+    const eAt = r.ends_at as string | null;
+    if (!sAt || !eAt) continue;
+    const sDate = safeDate(sAt)!;
+    const eDate = safeDate(eAt)!;
+    const peTitle =
+      (r.title as string) ||
+      `${r.publisher as string} sale`;
+    if (sDate >= startParam && sDate <= endParam) {
+      events.push({
+        date: sDate,
+        type: "publisher_sale_start",
+        title: peTitle,
+        subtitle: r.publisher as string,
+        shop: r.publisher as string,
+        at: sAt,
+        edition_id: (r.edition_id as string) || null,
+        publisher_sale_event_id: r.id as string,
+      });
+    }
+    if (eDate >= startParam && eDate <= endParam && eDate !== sDate) {
+      events.push({
+        date: eDate,
+        type: "publisher_sale_end",
+        title: peTitle,
+        subtitle: r.publisher as string,
+        shop: r.publisher as string,
+        at: eAt,
+        edition_id: (r.edition_id as string) || null,
+        publisher_sale_event_id: r.id as string,
+      });
+    }
+  }
+
+  // 5. Ships
   for (const row of resShips.data ?? []) {
     const r = row as Record<string, unknown>;
     const sd = safeDate(r.ship_date as string);
@@ -216,7 +270,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 5. Deliveries
+  // 6. Deliveries
   for (const row of resDeliveries.data ?? []) {
     const r = row as Record<string, unknown>;
     const dd = safeDate(r.delivery_date as string);

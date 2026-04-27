@@ -30,13 +30,21 @@ export class ApiError extends Error {
   }
 }
 
-async function authHeader(): Promise<Record<string, string>> {
+async function authHeaderOrThrow(): Promise<Record<string, string>> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  return session?.access_token
-    ? { Authorization: `Bearer ${session.access_token}` }
-    : {};
+  if (!session?.access_token) {
+    // Fail fast with a clean message so pages can show "Please sign in"
+    // instead of letting the request hit the server and return a confusing
+    // "Missing Authorization bearer token" from the edge function.
+    throw new ApiError(
+      401,
+      { detail: "Not signed in" },
+      "Not signed in. Please sign in again.",
+    );
+  }
+  return { Authorization: `Bearer ${session.access_token}` };
 }
 
 export async function api<T>(
@@ -47,7 +55,7 @@ export async function api<T>(
     "Content-Type": "application/json",
     ...(ANON_KEY ? { apikey: ANON_KEY } : {}),
     ...(init.headers as Record<string, string> | undefined),
-    ...(await authHeader()),
+    ...(await authHeaderOrThrow()),
   };
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });

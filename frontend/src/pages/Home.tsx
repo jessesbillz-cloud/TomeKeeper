@@ -1,10 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
+import { CalendarSubscribe } from "../components/CalendarSubscribe";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { QRScanButton } from "../components/QRScanButton";
 import { get } from "../lib/api";
 import type { CalendarEvent, CalendarEventType } from "../lib/types";
+
+/**
+ * Pull a likely ISBN out of a scanned QR/barcode payload.
+ *  - EAN-13 / ISBN-13 → 13 digits, usually starting with 978/979
+ *  - ISBN-10 → 10 digits or 9 digits + "X"
+ *  - URL containing /isbn/<digits> → extract
+ * Returns the cleaned ISBN, or null if we don't recognize it.
+ */
+function extractIsbn(text: string): string | null {
+  const trimmed = text.trim();
+  // Match an ISBN inside a URL path (Goodreads, Amazon, etc.)
+  const urlMatch = trimmed.match(/(?:isbn[/:= ]?)(\d{9,13}[Xx]?)/i);
+  if (urlMatch) return urlMatch[1].toUpperCase();
+  // Strip dashes / spaces and check raw digits
+  const cleaned = trimmed.replace(/[\s-]/g, "");
+  if (/^(?:97[89])?\d{9}[\dXx]$/.test(cleaned)) return cleaned.toUpperCase();
+  return null;
+}
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -15,6 +34,8 @@ const EVENT_LABEL: Record<CalendarEventType, string> = {
   preorder_open: "Preorder opens",
   preorder_close: "Preorder closes",
   flash_sale: "Flash sale",
+  publisher_sale_start: "Publisher sale starts",
+  publisher_sale_end: "Publisher sale ends",
 };
 
 // A shop with no name (orphan events) all share this slot. "_none" sorts last.
@@ -97,6 +118,7 @@ function formatTime(at: string): string {
 }
 
 export function Home() {
+  const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState<Date>(() =>
     startOfMonth(new Date()),
   );
@@ -104,6 +126,7 @@ export function Home() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // null = "show all shops". Non-null = whitelist of shop keys to show.
   const [activeShops, setActiveShops] = useState<Set<string> | null>(null);
@@ -185,6 +208,10 @@ export function Home() {
 
   return (
     <div>
+      <div className="mb-3">
+        <CalendarSubscribe />
+      </div>
+
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-base font-semibold text-pink-200">{monthLabel}</h1>
         <div className="flex gap-1">
@@ -353,10 +380,10 @@ export function Home() {
             + Flash sale
           </Link>
           <Link
-            to={`/capture?release_date=${selectedKey}`}
+            to={`/publisher-sales-events?starts=${selectedKey}`}
             className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"
           >
-            ✏️ Manual entry
+            🏷️ Publisher sale event
           </Link>
           <PhotoCaptureButton
             to="/capture"
@@ -364,8 +391,33 @@ export function Home() {
             mode="library"
             label="🖼️ Upload screenshot"
           />
-          <QRScanButton label="📱 Scan QR / ISBN" />
+          <QRScanButton
+            label="📱 Scan QR / ISBN"
+            onResult={(text) => {
+              const isbn = extractIsbn(text);
+              if (!isbn) {
+                setScanError(
+                  `Couldn't read an ISBN from "${text.slice(0, 40)}${
+                    text.length > 40 ? "…" : ""
+                  }". Try the barcode on the back cover.`,
+                );
+                return;
+              }
+              setScanError(null);
+              const params = new URLSearchParams({
+                isbn,
+                from: "scan",
+                release_date: selectedKey,
+              });
+              navigate(`/capture?${params.toString()}`);
+            }}
+          />
         </div>
+        {scanError && (
+          <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
+            {scanError}
+          </p>
+        )}
 
         {loading && <p className="text-sm text-pink-400">Loading events…</p>}
         {error && (

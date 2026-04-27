@@ -98,13 +98,29 @@ export interface FlashSale {
   updated_at: ISODateTime;
 }
 
+export interface PublisherSalesEvent {
+  id: UUID;
+  user_id: UUID;
+  publisher: string;
+  title: string | null;
+  url: string | null;
+  edition_id: UUID | null;
+  starts_at: ISODateTime;
+  ends_at: ISODateTime;
+  notes: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 export type CalendarEventType =
   | "release"
   | "ship"
   | "deliver"
   | "preorder_open"
   | "preorder_close"
-  | "flash_sale";
+  | "flash_sale"
+  | "publisher_sale_start"
+  | "publisher_sale_end";
 
 export interface CalendarEvent {
   date: ISODate;
@@ -117,4 +133,5 @@ export interface CalendarEvent {
   library_entry_id: UUID | null;
   order_id: UUID | null;
   flash_sale_id: UUID | null;
+  publisher_sale_event_id?: UUID | null;
 }

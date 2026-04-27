@@ -74,11 +74,14 @@ export function Capture() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const initialReleaseDate = searchParams.get("release_date") ?? "";
+  const initialIsbn = searchParams.get("isbn") ?? "";
   const fromPhoto = searchParams.get("from") === "photo";
+  const fromScan = searchParams.get("from") === "scan";
   const photoDataUrl = (location.state as PhotoState | null)?.photoDataUrl;
   const [form, setForm] = useState<Form>({
     ...EMPTY,
     release_date: initialReleaseDate,
+    isbn: initialIsbn,
     // If we arrived from PhotoCaptureButton, prefill cover_url with the
     // resized data URL so it's saved with the edition.
     cover_url: photoDataUrl ?? "",
@@ -165,6 +168,14 @@ export function Capture() {
           />
         </div>
       </div>
+      {fromScan && initialIsbn && (
+        <p className="text-xs text-pink-200 border border-pink-500/40 bg-pink-950/30 p-2 mb-3 max-w-2xl">
+          📱 Scanned ISBN{" "}
+          <span className="font-mono text-pink-100">{initialIsbn}</span>{" "}
+          prefilled below. Fill in title, edition name, and any other details
+          off the cover, then save.
+        </p>
+      )}
       {fromPhoto && !photoDataUrl && (
         <p className="text-xs text-pink-300 border border-pink-500/40 bg-pink-950/30 p-2 mb-3 max-w-2xl">
           📷 Photo capture: snap or paste the cover image URL into the
