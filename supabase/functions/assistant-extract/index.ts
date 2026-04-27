@@ -249,15 +249,95 @@ function normalize(parsed: unknown): AssistantPlan {
 
 /**
  * Strip ```json fences or leading prose so JSON.parse succeeds.
+ *
+ * If the model response was cut off mid-output (max_tokens hit) the trailing
+ * JSON will be syntactically incomplete — typically a half-finished object
+ * inside an array, missing closing brackets. We try the strict parse first,
+ * and if that fails we attempt a salvage: walk back to the last fully-
+ * closed object inside the most recently opened array, then synthesize
+ * matching closes for whatever scopes are still open. This loses the
+ * truncated tail entry but keeps everything that fully arrived, which is
+ * vastly better than tossing out 50 cataloged books because the 51st was
+ * cut off mid-title.
  */
 function extractJson(text: string): unknown {
   let t = text.trim();
   const fenced = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   if (fenced) t = fenced[1].trim();
   const first = t.indexOf("{");
-  const last = t.lastIndexOf("}");
-  if (first > 0 && last > first) t = t.slice(first, last + 1);
-  return JSON.parse(t);
+  if (first > 0) t = t.slice(first);
+  // Strict parse path.
+  try {
+    return JSON.parse(t);
+  } catch (firstErr) {
+    const salvaged = salvagePartialJson(t);
+    if (salvaged !== null) {
+      try {
+        return JSON.parse(salvaged);
+      } catch {
+        // fall through to throw the original error
+      }
+    }
+    throw firstErr;
+  }
+}
+
+/**
+ * Best-effort recovery from a truncated JSON object. Walks the string
+ * tracking string-escape state and bracket depth; when we run out of
+ * characters mid-stream, we trim back to the last comma-terminated array
+ * element, then close every still-open bracket/brace in the right order.
+ * Returns the salvaged JSON string, or null if we couldn't make sense of
+ * the input.
+ */
+function salvagePartialJson(input: string): string | null {
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  let lastSafeArrayCutIndex = -1;
+  let lastSafeStack: string[] = [];
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      stack.push(ch);
+    } else if (ch === "}" || ch === "]") {
+      stack.pop();
+    } else if (ch === ",") {
+      // A comma at the top-of-stack of an array means "the previous
+      // array element was completely received". This is our safe
+      // truncation point.
+      if (stack[stack.length - 1] === "[") {
+        lastSafeArrayCutIndex = i;
+        lastSafeStack = [...stack];
+      }
+    }
+  }
+
+  // Nothing was truncated → caller should have succeeded already.
+  if (stack.length === 0 && !inString) return input;
+  if (lastSafeArrayCutIndex === -1) return null;
+
+  let out = input.slice(0, lastSafeArrayCutIndex);
+  // Close every still-open scope in reverse order.
+  for (let i = lastSafeStack.length - 1; i >= 0; i--) {
+    out += lastSafeStack[i] === "[" ? "]" : "}";
+  }
+  return out;
 }
 
 /**
@@ -362,7 +442,10 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 4096,
+        // A shelf photo can yield 50+ library_books, each a small JSON
+        // object — that easily blows past 4K output tokens. 16K gives us
+        // room for ~80 books in a single batch without truncation.
+        max_tokens: 16384,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content }],
       }),
