@@ -9,7 +9,7 @@ import { Library } from "./pages/Library";
 
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/TomeKeeper">
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Home />} />
