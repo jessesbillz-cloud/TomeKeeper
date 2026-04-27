@@ -38,6 +38,20 @@ const EVENT_LABEL: Record<CalendarEventType, string> = {
   publisher_sale_end: "Publisher sale ends",
 };
 
+// Tiny glyph per event type — used in the day-detail list in place of the
+// old wide "FLASH SALE" / "PUBLISHER SALE STARTS" text column, which ate
+// horizontal space the event title could use instead.
+const EVENT_ICON: Record<CalendarEventType, string> = {
+  release: "📚",
+  ship: "📦",
+  deliver: "🎁",
+  preorder_open: "🛒",
+  preorder_close: "⏳",
+  flash_sale: "⚡",
+  publisher_sale_start: "🏷️",
+  publisher_sale_end: "🏷️",
+};
+
 // A shop with no name (orphan events) all share this slot. "_none" sorts last.
 const UNKNOWN_SHOP = "_none";
 
@@ -115,6 +129,37 @@ function formatTime(at: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+/**
+ * Where should tapping a calendar event take the user?
+ *  - releases / preorders / ships / deliveries → the edition detail page,
+ *    which is the canonical place to view + edit a book and its order.
+ *  - flash sales / publisher sales → their list pages, with `?id=` so the
+ *    target row can scroll-into-view + highlight on arrival.
+ * Returns null if we don't have enough identifying info to route anywhere
+ * useful (in which case the row is rendered as a non-clickable display).
+ */
+function eventDetailHref(ev: CalendarEvent): string | null {
+  switch (ev.type) {
+    case "release":
+    case "preorder_open":
+    case "preorder_close":
+    case "ship":
+    case "deliver":
+      return ev.edition_id ? `/editions/${ev.edition_id}` : null;
+    case "flash_sale":
+      return ev.flash_sale_id
+        ? `/flash-sales?id=${ev.flash_sale_id}`
+        : "/flash-sales";
+    case "publisher_sale_start":
+    case "publisher_sale_end":
+      return ev.publisher_sale_event_id
+        ? `/publisher-sales-events?id=${ev.publisher_sale_event_id}`
+        : "/publisher-sales-events";
+    default:
+      return null;
+  }
 }
 
 export function Home() {
@@ -320,32 +365,21 @@ export function Home() {
               >
                 {d.getDate()}
               </span>
+              {/* Bottom-anchored stack of full-width shop-color bars. One
+                  thin line per shop with events that day. No counts, no
+                  labels — the lines are the entire signal. */}
               {dayShops.length > 0 && (
-                <span className="mt-1 flex flex-wrap gap-1">
-                  {dayShops.slice(0, 4).map((sk) => {
+                <span className="mt-auto -mx-2 flex flex-col gap-0.5 pb-0.5">
+                  {dayShops.slice(0, 5).map((sk) => {
                     const c = shopColor(sk === UNKNOWN_SHOP ? null : sk);
                     return (
                       <span
                         key={sk}
-                        className={[
-                          "inline-block w-2 h-2 rounded-full",
-                          c.dot,
-                        ].join(" ")}
+                        className={["block h-1 w-full", c.dot].join(" ")}
                         title={sk === UNKNOWN_SHOP ? "Other" : sk}
                       />
                     );
                   })}
-                  {dayShops.length > 4 && (
-                    <span className="text-[10px] text-pink-400">
-                      +{dayShops.length - 4}
-                    </span>
-                  )}
-                </span>
-              )}
-              {dayEvents.length > 0 && (
-                <span className="mt-auto text-[11px] text-pink-400">
-                  {dayEvents.length}{" "}
-                  {dayEvents.length === 1 ? "event" : "events"}
                 </span>
               )}
             </button>
@@ -432,44 +466,62 @@ export function Home() {
           <ul className="card divide-y divide-zinc-800">
             {selectedEvents.map((ev, i) => {
               const c = shopColor(ev.shop);
+              const icon = EVENT_ICON[ev.type] ?? "•";
+              const target = eventDetailHref(ev);
+              const Tag = target ? "button" : "div";
               return (
                 <li
-                  key={`${ev.type}-${ev.flash_sale_id ?? ev.library_entry_id ?? ev.order_id ?? ev.edition_id ?? i}`}
-                  className="px-3 py-2 flex items-baseline gap-3"
+                  key={`${ev.type}-${ev.flash_sale_id ?? ev.publisher_sale_event_id ?? ev.library_entry_id ?? ev.order_id ?? ev.edition_id ?? i}`}
                 >
-                  <span
+                  <Tag
+                    onClick={target ? () => navigate(target) : undefined}
+                    type={target ? "button" : undefined}
                     className={[
-                      "inline-block w-2 h-2 rounded-full mt-1.5 shrink-0",
-                      c.dot,
+                      "w-full px-3 py-2 flex items-baseline gap-2 text-left",
+                      target ? "hover:bg-zinc-800 active:bg-zinc-800" : "",
                     ].join(" ")}
-                    title={ev.shop ?? "Other"}
-                  />
-                  <span className="text-[11px] uppercase tracking-wide text-pink-400 w-28 shrink-0">
-                    {EVENT_LABEL[ev.type]}
-                  </span>
-                  <span className="flex-1 text-sm text-pink-200">
-                    {ev.title}
-                    {ev.subtitle && (
-                      <span className="text-xs text-pink-400 ml-2">
-                        {ev.subtitle}
-                      </span>
-                    )}
-                  </span>
-                  {ev.at && (
-                    <span className="text-xs text-pink-300 tabular-nums">
-                      {formatTime(ev.at)}
-                    </span>
-                  )}
-                  {ev.shop && (
+                  >
+                    {/* Left rail: a thin colored bar matching the shop,
+                        plus a small emoji that hints at the event type.
+                        No label-text column — the title gets the full row.
+                        Tapping the row routes to the relevant detail/edit
+                        screen so the user can act on the event directly. */}
                     <span
                       className={[
-                        "text-[11px] px-1.5 py-0.5",
-                        c.chip,
+                        "inline-block w-1 self-stretch rounded-sm shrink-0",
+                        c.dot,
                       ].join(" ")}
+                      title={ev.shop ?? "Other"}
+                    />
+                    <span
+                      className="text-base shrink-0 leading-none"
+                      title={EVENT_LABEL[ev.type]}
+                      aria-label={EVENT_LABEL[ev.type]}
                     >
-                      {ev.shop}
+                      {icon}
                     </span>
-                  )}
+                    <span className="flex-1 text-sm text-pink-200 min-w-0">
+                      <span className="break-words">{ev.title}</span>
+                      {ev.subtitle && (
+                        <span className="text-xs text-pink-400 ml-2 break-words">
+                          {ev.subtitle}
+                        </span>
+                      )}
+                    </span>
+                    {ev.at && (
+                      <span className="text-xs text-pink-300 tabular-nums shrink-0">
+                        {formatTime(ev.at)}
+                      </span>
+                    )}
+                    {target && (
+                      <span
+                        className="text-pink-500 shrink-0"
+                        aria-hidden="true"
+                      >
+                        ›
+                      </span>
+                    )}
+                  </Tag>
                 </li>
               );
             })}

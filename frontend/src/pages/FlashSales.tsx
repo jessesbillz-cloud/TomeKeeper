@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { del, get, post } from "../lib/api";
@@ -44,8 +44,10 @@ function fromISO(iso: string): string {
 export function FlashSales() {
   const [searchParams] = useSearchParams();
   const initialStarts = searchParams.get("starts") ?? "";
+  const highlightId = searchParams.get("id");
 
   const [sales, setSales] = useState<FlashSale[]>([]);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(() =>
@@ -81,6 +83,17 @@ export function FlashSales() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showActiveOnly]);
+
+  // After data loads, if we arrived with ?id=<flash_sale_id> (e.g. by
+  // tapping the flash-sale event on the home calendar), scroll that row
+  // into view. The row's CSS handles the brief highlight ring.
+  useEffect(() => {
+    if (!highlightId || sales.length === 0) return;
+    const el = rowRefs.current.get(highlightId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, sales]);
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
@@ -133,14 +146,36 @@ export function FlashSales() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      {/* Sticky page header. When the iOS datetime-local picker pops up it
+          covers the bottom half of the viewport — by sticking this row to
+          the top, the Save button (mounted here when the form is open)
+          stays tappable regardless of which input is focused or how far
+          the user has scrolled inside the form. */}
+      <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-black border-b border-zinc-800 flex items-center justify-between mb-3">
         <h1 className="text-base font-semibold text-pink-200">Flash sales</h1>
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-        >
-          {adding ? "Cancel" : "+ Add flash sale"}
-        </button>
+        <div className="flex gap-2">
+          {adding && (
+            <button
+              type="submit"
+              form="flash-sale-form"
+              disabled={saving}
+              className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
+          <button
+            onClick={() => setAdding((v) => !v)}
+            className={[
+              "px-3 py-1 text-sm",
+              adding
+                ? "border border-zinc-700 text-pink-300 hover:bg-zinc-800"
+                : "bg-pink-500 text-black hover:bg-pink-400",
+            ].join(" ")}
+          >
+            {adding ? "Cancel" : "+ Add flash sale"}
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-3">
@@ -170,6 +205,7 @@ export function FlashSales() {
 
       {adding && (
         <form
+          id="flash-sale-form"
           onSubmit={onAdd}
           className="card p-3 mb-3 grid grid-cols-2 gap-2 text-sm"
         >
@@ -259,7 +295,16 @@ export function FlashSales() {
           {sales.map((s) => (
             <div
               key={s.id}
-              className="px-3 py-2 flex items-center gap-3 text-sm"
+              ref={(el) => {
+                if (el) rowRefs.current.set(s.id, el);
+                else rowRefs.current.delete(s.id);
+              }}
+              className={[
+                "px-3 py-2 flex items-center gap-3 text-sm",
+                highlightId === s.id
+                  ? "ring-2 ring-pink-400 ring-inset bg-zinc-900"
+                  : "",
+              ].join(" ")}
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-pink-200">{s.title ?? s.shop}</div>

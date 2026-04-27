@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { del, get, post } from "../lib/api";
@@ -44,8 +44,10 @@ function fromISO(iso: string): string {
 export function PublisherSalesEvents() {
   const [searchParams] = useSearchParams();
   const initialStarts = searchParams.get("starts") ?? "";
+  const highlightId = searchParams.get("id");
 
   const [events, setEvents] = useState<PublisherSalesEvent[]>([]);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(() =>
@@ -82,6 +84,16 @@ export function PublisherSalesEvents() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showActiveOnly]);
+
+  // Scroll the targeted row into view when arriving with ?id=<...>
+  // (e.g. after tapping a publisher-sale event on the home calendar).
+  useEffect(() => {
+    if (!highlightId || events.length === 0) return;
+    const el = rowRefs.current.get(highlightId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, events]);
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
@@ -137,16 +149,36 @@ export function PublisherSalesEvents() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      {/* Sticky page header (same pattern as FlashSales) — keeps Save
+          tappable while the iOS datetime picker covers the bottom of the
+          viewport. */}
+      <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-black border-b border-zinc-800 flex items-center justify-between mb-3">
         <h1 className="text-base font-semibold text-pink-200">
           Publisher sales events
         </h1>
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-        >
-          {adding ? "Cancel" : "+ Add event"}
-        </button>
+        <div className="flex gap-2">
+          {adding && (
+            <button
+              type="submit"
+              form="publisher-sale-event-form"
+              disabled={saving}
+              className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
+          <button
+            onClick={() => setAdding((v) => !v)}
+            className={[
+              "px-3 py-1 text-sm",
+              adding
+                ? "border border-zinc-700 text-pink-300 hover:bg-zinc-800"
+                : "bg-pink-500 text-black hover:bg-pink-400",
+            ].join(" ")}
+          >
+            {adding ? "Cancel" : "+ Add event"}
+          </button>
+        </div>
       </div>
 
       <p className="text-xs text-pink-400 mb-3">
@@ -182,6 +214,7 @@ export function PublisherSalesEvents() {
 
       {adding && (
         <form
+          id="publisher-sale-event-form"
           onSubmit={onAdd}
           className="card p-3 mb-3 grid grid-cols-2 gap-2 text-sm"
         >
@@ -273,7 +306,16 @@ export function PublisherSalesEvents() {
           {events.map((s) => (
             <div
               key={s.id}
-              className="px-3 py-2 flex items-center gap-3 text-sm"
+              ref={(el) => {
+                if (el) rowRefs.current.set(s.id, el);
+                else rowRefs.current.delete(s.id);
+              }}
+              className={[
+                "px-3 py-2 flex items-center gap-3 text-sm",
+                highlightId === s.id
+                  ? "ring-2 ring-pink-400 ring-inset bg-zinc-900"
+                  : "",
+              ].join(" ")}
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-pink-200">
