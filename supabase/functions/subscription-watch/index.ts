@@ -30,7 +30,7 @@ import { json, badRequest } from "../_shared/response.ts";
  *   POST /subscription-watch?id=…  → check just one row (debug from UI)
  */
 
-const ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+const ANTHROPIC_MODEL = "claude-sonnet-4-5";
 const FRESHNESS_HOURS = 18;
 const MAX_HTML_BYTES = 200_000; // bytes of cleaned text shipped to Claude
 

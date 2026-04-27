@@ -45,7 +45,7 @@ import { json, badRequest, methodNotAllowed } from "../_shared/response.ts";
  * Security: relies on Supabase verify_jwt — only signed-in users can call.
  */
 
-const ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+const ANTHROPIC_MODEL = "claude-sonnet-4-5";
 const MAX_IMAGES = 8;
 
 const SYSTEM_PROMPT = `You are the Book Assistant for TomeKeeper, a special-edition book tracker. You help Janelle catalog her library and track upcoming preorder/sale drops from indie publishers and book boxes.

@@ -24,7 +24,7 @@ import { json, badRequest, methodNotAllowed } from "../_shared/response.ts";
  * default for new functions) so only signed-in users can call it.
  */
 
-const ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+const ANTHROPIC_MODEL = "claude-sonnet-4-5";
 
 // The set of fields Capture.tsx renders. The model is asked to emit an
 // array of these shapes (one per book it can identify in the screenshot)
