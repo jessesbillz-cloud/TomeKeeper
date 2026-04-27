@@ -31,9 +31,32 @@ export class ApiError extends Error {
 }
 
 async function authHeaderOrThrow(): Promise<Record<string, string>> {
-  const {
+  let {
     data: { session },
   } = await supabase.auth.getSession();
+
+  // Supabase's autoRefreshToken kicks in on a timer, but if the app was
+  // backgrounded or the user is reopening the PWA after the access_token
+  // already expired, getSession() returns the cached (expired) session. The
+  // edge function platform then rejects it with a 401 before our function
+  // code even runs. Pre-empt that by refreshing if we're within 60s of
+  // expiry — or already past it.
+  if (session?.expires_at) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (session.expires_at - nowSec < 60) {
+      const { data: refreshed, error: refreshErr } =
+        await supabase.auth.refreshSession();
+      if (refreshErr || !refreshed.session) {
+        // Refresh token is also expired/invalid. Sign the user out so the
+        // AuthGate flips back to <Login> on the next render.
+        await supabase.auth.signOut();
+        session = null;
+      } else {
+        session = refreshed.session;
+      }
+    }
+  }
+
   if (!session?.access_token) {
     // Fail fast with a clean message so pages can show "Please sign in"
     // instead of letting the request hit the server and return a confusing
