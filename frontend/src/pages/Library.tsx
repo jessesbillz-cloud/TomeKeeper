@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { get, patch } from "../lib/api";
+import { del, get, patch } from "../lib/api";
 import type {
   Edition,
   LibraryEntry,
@@ -95,6 +95,27 @@ export function Library() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
       void load();
+    }
+  }
+
+  /**
+   * Remove a library entry. Optimistic — drop it from the visible list
+   * immediately, then DELETE on the server. If the server rejects the
+   * delete (e.g. transient network error) we restore the row so Janelle
+   * doesn't lose track of it. Note this only deletes the *library entry*
+   * (the "this is in my collection" row); the underlying work + edition
+   * stay around so the same book can be re-added later or referenced
+   * from drops/calendar events.
+   */
+  async function removeEntry(entryId: string) {
+    const prev = rows;
+    setRows(rows.filter((r) => r.entry.id !== entryId));
+    setError(null);
+    try {
+      await del(`/library/${entryId}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+      setRows(prev);
     }
   }
 
@@ -230,6 +251,7 @@ export function Library() {
               key={row.entry.id}
               row={row}
               onSetStatus={(s) => void setStatus(row.entry.id, s)}
+              onRemove={() => void removeEntry(row.entry.id)}
             />
           ))}
         </div>
@@ -241,12 +263,24 @@ export function Library() {
 function LibraryRow({
   row,
   onSetStatus,
+  onRemove,
 }: {
   row: Row;
   onSetStatus: (s: LibraryStatus) => void;
+  onRemove: () => void;
 }) {
   const { entry, edition, work } = row;
   const [open, setOpen] = useState(false);
+
+  function confirmRemove() {
+    const title = work?.title ?? "this book";
+    // window.confirm is intentional — the delete is destructive enough
+    // that a hard "are you sure" beats a tiny toast undo, and Janelle
+    // won't be doing this often.
+    if (window.confirm(`Remove "${title}" from your library?`)) {
+      onRemove();
+    }
+  }
 
   return (
     <div className="hover:bg-zinc-800/40">
@@ -371,13 +405,20 @@ function LibraryRow({
               {entry.notes}
             </div>
           )}
-          <div className="pt-1">
+          <div className="pt-1 flex items-center gap-3">
             <Link
               to={`/editions/${entry.edition_id}`}
               className="text-pink-300 underline text-xs"
             >
               Open full details →
             </Link>
+            <button
+              type="button"
+              onClick={confirmRemove}
+              className="text-xs border border-red-700 text-red-300 px-2 py-0.5 hover:bg-red-950/40 ml-auto"
+            >
+              Remove from library
+            </button>
           </div>
         </div>
       )}
