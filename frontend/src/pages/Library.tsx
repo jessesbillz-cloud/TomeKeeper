@@ -40,6 +40,7 @@ export function Library() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<LibraryStatus | "all">("all");
+  const [publisherFilter, setPublisherFilter] = useState<string | "all">("all");
   const [query, setQuery] = useState("");
 
   async function load() {
@@ -101,6 +102,12 @@ export function Library() {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (filter !== "all" && r.entry.status !== filter) return false;
+      if (
+        publisherFilter !== "all" &&
+        (r.edition?.publisher_or_shop ?? "") !== publisherFilter
+      ) {
+        return false;
+      }
       if (!q) return true;
       const hay = [
         r.work?.title,
@@ -116,13 +123,29 @@ export function Library() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [rows, filter, query]);
+  }, [rows, filter, publisherFilter, query]);
 
+  // Per-status counts. Zero-count statuses are hidden from the filter row.
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length };
     for (const s of STATUS_OPTIONS) c[s] = 0;
     for (const r of rows) c[r.entry.status] = (c[r.entry.status] ?? 0) + 1;
     return c;
+  }, [rows]);
+
+  // Publishers / shops actually present in the user's library, sorted by
+  // how many rows each one has so the heaviest ones lead the row. Tied
+  // counts fall back to alphabetical for stability.
+  const publishers = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const r of rows) {
+      const p = r.edition?.publisher_or_shop?.trim();
+      if (!p) continue;
+      seen.set(p, (seen.get(p) ?? 0) + 1);
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }));
   }, [rows]);
 
   return (
@@ -137,13 +160,15 @@ export function Library() {
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      {/* Status filter row. Zero-count statuses are hidden so the row stays
+          readable as Janelle's collection grows in only a few states. */}
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <Chip
           on={filter === "all"}
           onClick={() => setFilter("all")}
           label={`All (${counts.all})`}
         />
-        {STATUS_OPTIONS.map((s) => (
+        {STATUS_OPTIONS.filter((s) => (counts[s] ?? 0) > 0).map((s) => (
           <Chip
             key={s}
             on={filter === s}
@@ -159,6 +184,30 @@ export function Library() {
           className="ml-auto border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm w-64"
         />
       </div>
+
+      {/* Publisher / shop filter row. Only renders if the user has at least
+          one publisher tagged on an edition (otherwise the row would be a
+          single "All publishers" chip with nothing to compare against). */}
+      {publishers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[11px] uppercase tracking-wide text-pink-400 mr-1">
+            Publisher / shop:
+          </span>
+          <Chip
+            on={publisherFilter === "all"}
+            onClick={() => setPublisherFilter("all")}
+            label={`All (${rows.length})`}
+          />
+          {publishers.map((p) => (
+            <Chip
+              key={p.name}
+              on={publisherFilter === p.name}
+              onClick={() => setPublisherFilter(p.name)}
+              label={`${p.name} (${p.count})`}
+            />
+          ))}
+        </div>
+      )}
 
       {loading && <p className="text-sm text-pink-400">Loading…</p>}
       {error && (

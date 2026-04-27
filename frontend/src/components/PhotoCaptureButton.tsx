@@ -10,6 +10,13 @@ type Props = {
   label?: string;
   /** Tailwind classes for the button. */
   className?: string;
+  /**
+   * "camera" (default) launches the rear camera directly via the
+   *   `capture="environment"` hint — best for taking a fresh cover photo.
+   * "library" omits the capture hint so the OS picker lets the user choose
+   *   from their photo library — used for "Upload screenshot".
+   */
+  mode?: "camera" | "library";
 };
 
 /**
@@ -41,6 +48,7 @@ export function PhotoCaptureButton({
   searchParams,
   label = "📷 Take photo",
   className,
+  mode = "camera",
 }: Props) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +96,7 @@ export function PhotoCaptureButton({
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        capture={mode === "camera" ? "environment" : undefined}
         onChange={(e) => void onPick(e)}
         className="hidden"
       />

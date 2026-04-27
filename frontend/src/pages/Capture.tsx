@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
+import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { post } from "../lib/api";
 import type { Edition, LibraryEntry, LibraryStatus, Work } from "../lib/types";
 
@@ -146,7 +147,24 @@ export function Capture() {
 
   return (
     <div>
-      <h1 className="text-base font-semibold mb-3 text-pink-200">Capture</h1>
+      <div className="flex items-center justify-between mb-3 max-w-2xl">
+        <h1 className="text-base font-semibold text-pink-200">Capture</h1>
+        {/* Top-of-form photo button so Janelle can grab a cover without
+            scrolling around. The global floating button does the same thing,
+            but having it here too matches "right at the top". */}
+        <div className="flex gap-2">
+          <PhotoCaptureButton
+            to="/capture"
+            mode="camera"
+            label="📷 Take photo"
+          />
+          <PhotoCaptureButton
+            to="/capture"
+            mode="library"
+            label="🖼️ Upload"
+          />
+        </div>
+      </div>
       {fromPhoto && !photoDataUrl && (
         <p className="text-xs text-pink-300 border border-pink-500/40 bg-pink-950/30 p-2 mb-3 max-w-2xl">
           📷 Photo capture: snap or paste the cover image URL into the

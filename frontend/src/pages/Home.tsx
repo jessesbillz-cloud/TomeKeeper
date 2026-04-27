@@ -338,14 +338,13 @@ export function Home() {
         </h2>
 
         {/* Quick-add actions for the selected day. These are always visible
-            so they work even when the calendar fetch fails. */}
+            so they work even when the calendar fetch fails.
+
+            Note: "Take photo" lives only as the global floating button now
+            (see Layout.tsx) — having it here too duplicated the action.
+            "+ Release" was removed for the same reason: the Capture nav link
+            up top already points at the same screen. */}
         <div className="flex flex-wrap gap-2 mb-3">
-          <Link
-            to={`/capture?release_date=${selectedKey}`}
-            className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-          >
-            + Release
-          </Link>
           <Link
             to={`/flash-sales?starts=${selectedKey}`}
             className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
@@ -355,7 +354,8 @@ export function Home() {
           <PhotoCaptureButton
             to="/capture"
             searchParams={{ release_date: selectedKey }}
-            label="📷 Take photo"
+            mode="library"
+            label="🖼️ Upload screenshot"
           />
           <QRScanButton label="📱 Scan QR / ISBN" />
         </div>
