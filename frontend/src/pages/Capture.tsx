@@ -5,7 +5,33 @@ import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { post } from "../lib/api";
 import type { Edition, LibraryEntry, LibraryStatus, Work } from "../lib/types";
 
-type PhotoState = { photoDataUrl?: string };
+type PhotoState = {
+  photoDataUrl?: string;
+  /**
+   * When the user comes from "Upload screenshot (AI)", PhotoCaptureButton
+   * forwards the structured fields the scan-screenshot edge function
+   * extracted from the image. We use these to prefill the form. Anything
+   * left null falls through to EMPTY's default.
+   */
+  scanFields?: {
+    title?: string | null;
+    author?: string | null;
+    series?: string | null;
+    series_number?: number | null;
+    edition_name?: string | null;
+    publisher_or_shop?: string | null;
+    retailer?: string | null;
+    release_date?: string | null;
+    isbn?: string | null;
+    edition_size?: number | null;
+    special_features?: string | null;
+    preorder_start_at?: string | null;
+    preorder_end_at?: string | null;
+    notes?: string | null;
+  } | null;
+  /** A user-facing error message if the AI scan failed. */
+  scanError?: string | null;
+};
 
 type Form = {
   title: string;
@@ -77,15 +103,52 @@ export function Capture() {
   const initialIsbn = searchParams.get("isbn") ?? "";
   const fromPhoto = searchParams.get("from") === "photo";
   const fromScan = searchParams.get("from") === "scan";
-  const photoDataUrl = (location.state as PhotoState | null)?.photoDataUrl;
-  const [form, setForm] = useState<Form>({
-    ...EMPTY,
-    release_date: initialReleaseDate,
-    isbn: initialIsbn,
-    // If we arrived from PhotoCaptureButton, prefill cover_url with the
-    // resized data URL so it's saved with the edition.
-    cover_url: photoDataUrl ?? "",
-  });
+  const fromAi = searchParams.get("from") === "ai";
+  const navState = (location.state as PhotoState | null) ?? null;
+  const photoDataUrl = navState?.photoDataUrl;
+  const scanFields = navState?.scanFields ?? null;
+  const scanError = navState?.scanError ?? null;
+
+  // Build the initial form state, layering: EMPTY < query-param prefills <
+  // AI-extracted fields < the photo data URL for the cover. Anything the AI
+  // returned as null is left empty so the user notices and fills it in.
+  const initialForm: Form = (() => {
+    const base: Form = {
+      ...EMPTY,
+      release_date: initialReleaseDate,
+      isbn: initialIsbn,
+      // If we arrived from PhotoCaptureButton, prefill cover_url with the
+      // resized data URL so it's saved with the edition.
+      cover_url: photoDataUrl ?? "",
+    };
+    if (!scanFields) return base;
+    const sn =
+      typeof scanFields.series_number === "number"
+        ? String(scanFields.series_number)
+        : "";
+    const es =
+      typeof scanFields.edition_size === "number"
+        ? String(scanFields.edition_size)
+        : "";
+    return {
+      ...base,
+      title: scanFields.title ?? base.title,
+      author: scanFields.author ?? base.author,
+      series: scanFields.series ?? base.series,
+      series_number: sn || base.series_number,
+      edition_name: scanFields.edition_name ?? base.edition_name,
+      publisher_or_shop:
+        scanFields.publisher_or_shop ?? base.publisher_or_shop,
+      retailer: scanFields.retailer ?? base.retailer,
+      release_date: scanFields.release_date ?? base.release_date,
+      isbn: scanFields.isbn ?? base.isbn,
+      edition_size: es || base.edition_size,
+      special_features:
+        scanFields.special_features ?? base.special_features,
+      notes: scanFields.notes ?? base.notes,
+    };
+  })();
+  const [form, setForm] = useState<Form>(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,7 +227,8 @@ export function Capture() {
           <PhotoCaptureButton
             to="/capture"
             mode="library"
-            label="🖼️ Upload"
+            label="✨ Scan screenshot"
+            aiScan
           />
         </div>
       </div>
@@ -174,6 +238,19 @@ export function Capture() {
           <span className="font-mono text-pink-100">{initialIsbn}</span>{" "}
           prefilled below. Fill in title, edition name, and any other details
           off the cover, then save.
+        </p>
+      )}
+      {fromAi && scanFields && (
+        <p className="text-xs text-pink-200 border border-pink-400 bg-pink-950/40 p-2 mb-3 max-w-2xl">
+          ✨ <span className="font-medium">Auto-filled by AI.</span> Review the
+          fields below — anything I wasn't sure about is left blank. Save when
+          it looks right.
+        </p>
+      )}
+      {fromAi && scanError && (
+        <p className="text-xs text-amber-200 border border-amber-700/60 bg-amber-950/40 p-2 mb-3 max-w-2xl">
+          ⚠️ AI scan didn't quite work: {scanError}. The image is still
+          attached as the cover — fill in the rest by hand.
         </p>
       )}
       {fromPhoto && !photoDataUrl && (

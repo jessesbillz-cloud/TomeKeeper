@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { del, get, post } from "../lib/api";
+import { del, get, patch, post } from "../lib/api";
 import type { PublisherSalesEvent } from "../lib/types";
 
 type Form = {
@@ -60,6 +60,8 @@ export function PublisherSalesEvents() {
         }
       : EMPTY,
   );
+  // null = "Add new". string = id of the row being edited.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(Boolean(initialStarts));
   const [saving, setSaving] = useState(false);
   const [showActiveOnly, setShowActiveOnly] = useState(false);
@@ -114,21 +116,32 @@ export function PublisherSalesEvents() {
     }
     setSaving(true);
     try {
-      const created = await post<PublisherSalesEvent>(
-        "/publisher-sales-events",
-        {
-          publisher: form.publisher.trim(),
-          title: form.title.trim() || null,
-          url: form.url.trim() || null,
-          edition_id: null,
-          starts_at: startsISO,
-          ends_at: endsISO,
-          notes: form.notes.trim() || null,
-        },
-      );
-      setEvents((prev) => [created, ...prev]);
+      const payload = {
+        publisher: form.publisher.trim(),
+        title: form.title.trim() || null,
+        url: form.url.trim() || null,
+        starts_at: startsISO,
+        ends_at: endsISO,
+        notes: form.notes.trim() || null,
+      };
+      if (editingId) {
+        const updated = await patch<PublisherSalesEvent>(
+          `/publisher-sales-events/${editingId}`,
+          payload,
+        );
+        setEvents((prev) =>
+          prev.map((s) => (s.id === editingId ? updated : s)),
+        );
+      } else {
+        const created = await post<PublisherSalesEvent>(
+          "/publisher-sales-events",
+          { ...payload, edition_id: null },
+        );
+        setEvents((prev) => [created, ...prev]);
+      }
       setForm(EMPTY);
       setAdding(false);
+      setEditingId(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -136,9 +149,30 @@ export function PublisherSalesEvents() {
     }
   }
 
+  function startEdit(s: PublisherSalesEvent) {
+    setForm({
+      publisher: s.publisher ?? "",
+      title: s.title ?? "",
+      url: s.url ?? "",
+      starts_at: fromISO(s.starts_at),
+      ends_at: fromISO(s.ends_at),
+      notes: s.notes ?? "",
+    });
+    setEditingId(s.id);
+    setAdding(true);
+    queueMicrotask(() =>
+      window.scrollTo({ top: 0, behavior: "smooth" }),
+    );
+  }
+
   async function remove(id: string) {
     const prev = events;
     setEvents(prev.filter((s) => s.id !== id));
+    if (editingId === id) {
+      setEditingId(null);
+      setAdding(false);
+      setForm(EMPTY);
+    }
     try {
       await del(`/publisher-sales-events/${id}`);
     } catch (e: unknown) {
@@ -154,7 +188,7 @@ export function PublisherSalesEvents() {
           viewport. */}
       <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-black border-b border-zinc-800 flex items-center justify-between mb-3">
         <h1 className="text-base font-semibold text-pink-200">
-          Publisher sales events
+          {editingId ? "Edit publisher sale" : "Publisher sales events"}
         </h1>
         <div className="flex gap-2">
           {adding && (
@@ -168,7 +202,15 @@ export function PublisherSalesEvents() {
             </button>
           )}
           <button
-            onClick={() => setAdding((v) => !v)}
+            onClick={() => {
+              if (adding) {
+                setAdding(false);
+                setEditingId(null);
+                setForm(EMPTY);
+              } else {
+                setAdding(true);
+              }
+            }}
             className={[
               "px-3 py-1 text-sm",
               adding
@@ -344,12 +386,20 @@ export function PublisherSalesEvents() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => void remove(s.id)}
-                className="text-xs border border-zinc-700 text-pink-300 px-2 py-0.5 hover:bg-zinc-800"
-              >
-                Delete
-              </button>
+              <div className="flex gap-1 shrink-0">
+                <button
+                  onClick={() => startEdit(s)}
+                  className="text-xs border border-pink-400 text-pink-200 px-2 py-0.5 hover:bg-zinc-800"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => void remove(s.id)}
+                  className="text-xs border border-zinc-700 text-pink-300 px-2 py-0.5 hover:bg-zinc-800"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { post, ApiError } from "../lib/api";
+
 type Props = {
   /** Where to send the captured photo. Defaults to /capture. */
   to?: string;
@@ -19,6 +21,13 @@ type Props = {
    *   from their photo library — used for "Upload screenshot".
    */
   mode?: "camera" | "library";
+  /**
+   * If true, after the user picks an image, POST it to /scan-screenshot
+   * (Claude vision) and forward the extracted fields as well as the
+   * thumbnail to /capture so the form lands prefilled. The button label
+   * temporarily shows "Scanning…" while the request is in flight.
+   */
+  aiScan?: boolean;
 };
 
 /**
@@ -45,6 +54,23 @@ async function fileToResizedDataUrl(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
+/**
+ * AI-scan mode does an extra resize for what we send to Claude — we want a
+ * larger image (text in screenshots needs to be readable) but still small
+ * enough to fit in a base64 POST without timing out. ~1200px on the long
+ * edge is a good balance.
+ */
+async function fileToScanDataUrl(file: File): Promise<string> {
+  return fileToResizedDataUrl(file, 1200, 0.85);
+}
+
+/** Shape returned by the scan-screenshot edge function. */
+type ScanResult = {
+  fields: Record<string, string | number | null> | null;
+  raw?: string;
+  detail?: string;
+};
+
 export function PhotoCaptureButton({
   to = "/capture",
   searchParams,
@@ -52,15 +78,17 @@ export function PhotoCaptureButton({
   className,
   style,
   mode = "camera",
+  aiScan = false,
 }: Props) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [working, setWorking] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function buildDest(): string {
     const params = new URLSearchParams(searchParams ?? {});
-    params.set("from", "photo");
+    params.set("from", aiScan ? "ai" : "photo");
     const qs = params.toString();
     return qs ? `${to}?${qs}` : to;
   }
@@ -71,16 +99,63 @@ export function PhotoCaptureButton({
     setWorking(true);
     setError(null);
     try {
-      const dataUrl = await fileToResizedDataUrl(file);
-      navigate(buildDest(), { state: { photoDataUrl: dataUrl } });
+      // Always produce a small thumbnail to ship to /capture as the cover.
+      const thumbDataUrl = await fileToResizedDataUrl(file);
+
+      if (!aiScan) {
+        navigate(buildDest(), { state: { photoDataUrl: thumbDataUrl } });
+        return;
+      }
+
+      // AI mode: send a higher-fidelity copy to the scan function so the
+      // model can actually read text in the screenshot.
+      setScanning(true);
+      const scanDataUrl = await fileToScanDataUrl(file);
+      let scan: ScanResult | null = null;
+      try {
+        scan = await post<ScanResult>("/scan-screenshot", {
+          image_data_url: scanDataUrl,
+        });
+      } catch (apiErr) {
+        // Don't block the user — fall through to /capture with just the
+        // photo and a banner explaining the scan failed.
+        const msg =
+          apiErr instanceof ApiError
+            ? apiErr.message
+            : apiErr instanceof Error
+              ? apiErr.message
+              : String(apiErr);
+        navigate(buildDest(), {
+          state: {
+            photoDataUrl: thumbDataUrl,
+            scanError: msg,
+          },
+        });
+        return;
+      }
+
+      navigate(buildDest(), {
+        state: {
+          photoDataUrl: thumbDataUrl,
+          scanFields: scan?.fields ?? null,
+          scanError: scan?.fields ? null : (scan?.detail ?? null),
+        },
+      });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setWorking(false);
+      setScanning(false);
       // Allow re-selecting the same file later.
       if (inputRef.current) inputRef.current.value = "";
     }
   }
+
+  const buttonLabel = scanning
+    ? "✨ Scanning…"
+    : working
+      ? "Processing…"
+      : label;
 
   return (
     <>
@@ -94,7 +169,7 @@ export function PhotoCaptureButton({
           "border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800 disabled:opacity-50"
         }
       >
-        {working ? "Processing…" : label}
+        {buttonLabel}
       </button>
       <input
         ref={inputRef}

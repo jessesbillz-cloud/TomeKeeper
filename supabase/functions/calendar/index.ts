@@ -18,10 +18,48 @@ interface CalendarEvent {
   publisher_sale_event_id?: string | null;
 }
 
+/**
+ * For values that are date-only strings in the DB (release_date,
+ * ship_date, delivery_date), we just want the YYYY-MM-DD prefix. No
+ * timezone math is needed — the user typed a calendar date and that's
+ * the only thing we have.
+ */
 function safeDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
   return isNaN(d.getTime()) ? null : value.slice(0, 10);
+}
+
+/**
+ * For full timestamps (starts_at / ends_at / preorder_*_at), we need to
+ * convert the UTC timestamp to the user's local calendar date. Without
+ * this, a flash sale that ends Monday 8 PM EST (Tuesday 00:00 UTC) gets
+ * stamped as Tuesday on the calendar grid, which makes it look like a
+ * 2-day event when it's really just a Monday-evening sale.
+ *
+ * `tz` should be an IANA zone like "America/New_York". If anything goes
+ * wrong (invalid value, missing) we fall back to the UTC date so we
+ * never explode the response.
+ */
+function localDate(
+  value: string | null | undefined,
+  tz: string | null,
+): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  if (!tz) return value.slice(0, 10);
+  try {
+    // en-CA gives YYYY-MM-DD format directly with a 2-digit month/day.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return value.slice(0, 10);
+  }
 }
 
 function toDateStr(dt: Date): string {
@@ -45,6 +83,10 @@ Deno.serve(async (req: Request) => {
 
   const startParam = getQueryParam(url, "start") ?? toDateStr(new Date());
   const endParam = getQueryParam(url, "end") ?? addDays(startParam, 90);
+  // `tz` is the user's IANA timezone (e.g. "America/New_York") forwarded
+  // by the frontend so we can map UTC timestamps to the user's local
+  // calendar day. Falls back to UTC if missing/invalid.
+  const tzParam = getQueryParam(url, "tz") ?? null;
 
   const startDt = startParam + "T00:00:00.000Z";
   const endDt = endParam + "T23:59:59.999Z";
@@ -147,7 +189,7 @@ Deno.serve(async (req: Request) => {
 
     const poStart = r.preorder_start_at as string | null;
     if (poStart) {
-      const d = safeDate(poStart);
+      const d = localDate(poStart, tzParam);
       if (d && d >= startParam && d <= endParam) {
         events.push({
           date: d,
@@ -163,7 +205,7 @@ Deno.serve(async (req: Request) => {
 
     const poEnd = r.preorder_end_at as string | null;
     if (poEnd) {
-      const d = safeDate(poEnd);
+      const d = localDate(poEnd, tzParam);
       if (d && d >= startParam && d <= endParam) {
         events.push({
           date: d,
@@ -185,8 +227,11 @@ Deno.serve(async (req: Request) => {
     const eAt = r.ends_at as string | null;
     if (!sAt || !eAt) continue;
 
-    const sDate = safeDate(sAt)!;
-    const eDate = safeDate(eAt)!;
+    // Use the user's local timezone here so a sale that ends at 8 PM
+    // local doesn't bleed into "tomorrow" because UTC midnight has
+    // already passed.
+    const sDate = localDate(sAt, tzParam)!;
+    const eDate = localDate(eAt, tzParam)!;
     const fsTitle = (r.title as string) || `Flash sale (${r.shop})`;
 
     // Clip to requested window
@@ -217,8 +262,8 @@ Deno.serve(async (req: Request) => {
     const sAt = r.starts_at as string | null;
     const eAt = r.ends_at as string | null;
     if (!sAt || !eAt) continue;
-    const sDate = safeDate(sAt)!;
-    const eDate = safeDate(eAt)!;
+    const sDate = localDate(sAt, tzParam)!;
+    const eDate = localDate(eAt, tzParam)!;
     const peTitle =
       (r.title as string) ||
       `${r.publisher as string} sale`;

@@ -184,8 +184,13 @@ export function Home() {
     start.setDate(start.getDate() - 7);
     const end = endOfMonth(currentMonth);
     end.setDate(end.getDate() + 7);
+    // Forward the browser's IANA timezone so the calendar function can
+    // place each sale on the user's local calendar day, not UTC. Without
+    // this, evening sales bleed into "tomorrow" on the grid.
+    const tz =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     get<CalendarEvent[]>(
-      `/calendar?start=${isoDate(start)}&end=${isoDate(end)}`,
+      `/calendar?start=${isoDate(start)}&end=${isoDate(end)}&tz=${encodeURIComponent(tz)}`,
     )
       .then((data) => {
         if (!cancelled) setEvents(data);
@@ -423,7 +428,8 @@ export function Home() {
             to="/capture"
             searchParams={{ release_date: selectedKey }}
             mode="library"
-            label="🖼️ Upload screenshot"
+            label="✨ Scan screenshot (AI)"
+            aiScan
           />
           <QRScanButton
             label="📱 Scan QR / ISBN"
