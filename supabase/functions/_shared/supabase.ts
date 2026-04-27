@@ -14,6 +14,15 @@ export function getUserId(req: Request): string {
     "Bearer ",
     "",
   );
-  const payload = JSON.parse(atob(token.split(".")[1]));
-  return payload.sub;
+  if (!token) throw new Error("Missing Authorization bearer token");
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error(`JWT must have 3 parts, got ${parts.length}`);
+  }
+  // JWTs are base64url, but atob() expects base64. Translate, then pad.
+  const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+  const payload = JSON.parse(atob(padded));
+  if (!payload.sub) throw new Error("JWT payload has no sub");
+  return payload.sub as string;
 }

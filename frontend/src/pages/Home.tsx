@@ -340,16 +340,23 @@ export function Home() {
         {/* Quick-add actions for the selected day. These are always visible
             so they work even when the calendar fetch fails.
 
-            Note: "Take photo" lives only as the global floating button now
-            (see Layout.tsx) — having it here too duplicated the action.
-            "+ Release" was removed for the same reason: the Capture nav link
-            up top already points at the same screen. */}
+            "Take photo" lives only as the global floating button now (see
+            Layout.tsx) — having it here too duplicated the action. The
+            "+ Manual entry" link goes to /capture with the day pre-filled,
+            which is the manual-entry path for releases that drop during a
+            sale (or when the screenshot/QR paths aren't appropriate). */}
         <div className="flex flex-wrap gap-2 mb-3">
           <Link
             to={`/flash-sales?starts=${selectedKey}`}
             className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
           >
             + Flash sale
+          </Link>
+          <Link
+            to={`/capture?release_date=${selectedKey}`}
+            className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"
+          >
+            ✏️ Manual entry
           </Link>
           <PhotoCaptureButton
             to="/capture"

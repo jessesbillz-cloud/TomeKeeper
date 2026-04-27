@@ -44,13 +44,17 @@ export function Layout() {
       </main>
 
       {/* Global floating "take photo" button — visible on every screen.
-          Tap to open the rear camera; once a photo is captured the user is
-          navigated to /capture with the image attached as router state. */}
+          Centered along the bottom so it sits in the natural thumb zone for
+          one-handed use, with a safe-area-inset margin so it never collides
+          with the iPhone home indicator. Tap to open the rear camera; once a
+          photo is captured the user is navigated to /capture with the image
+          attached as router state. */}
       <PhotoCaptureButton
         to="/capture"
         label="📷"
         mode="camera"
-        className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-full bg-pink-500 text-black text-2xl shadow-[0_4px_16px_rgba(236,72,153,0.5)] hover:bg-pink-400 disabled:opacity-50 flex items-center justify-center"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-16 h-16 rounded-full bg-pink-500 text-black text-3xl shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 disabled:opacity-50 flex items-center justify-center"
+        style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       />
     </div>
   );

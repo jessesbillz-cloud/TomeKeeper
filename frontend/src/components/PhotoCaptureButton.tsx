@@ -10,6 +10,8 @@ type Props = {
   label?: string;
   /** Tailwind classes for the button. */
   className?: string;
+  /** Inline style overrides — useful for safe-area inset on the FAB. */
+  style?: React.CSSProperties;
   /**
    * "camera" (default) launches the rear camera directly via the
    *   `capture="environment"` hint — best for taking a fresh cover photo.
@@ -48,6 +50,7 @@ export function PhotoCaptureButton({
   searchParams,
   label = "📷 Take photo",
   className,
+  style,
   mode = "camera",
 }: Props) {
   const navigate = useNavigate();
@@ -85,6 +88,7 @@ export function PhotoCaptureButton({
         type="button"
         disabled={working}
         onClick={() => inputRef.current?.click()}
+        style={style}
         className={
           className ??
           "border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800 disabled:opacity-50"
