@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   [
-    "px-3 py-1.5 text-sm",
+    "px-2 py-1 text-xs sm:text-sm whitespace-nowrap",
     isActive
       ? "border-b-2 border-pink-400 text-pink-200"
       : "border-b-2 border-transparent text-pink-500 hover:text-pink-300",
@@ -14,14 +14,16 @@ export function Layout() {
     <div className="min-h-screen flex flex-col bg-black">
       <header className="border-b border-zinc-800 bg-black shadow-[0_2px_12px_rgba(255,255,255,0.06)]">
         <div className="max-w-5xl mx-auto px-4">
-          {/* Top row: centered TomeKeeper wordmark */}
-          <div className="flex justify-center pt-3 pb-1">
-            <span className="font-semibold text-pink-300 tracking-wide">
+          {/* Top row: centered TomeKeeper wordmark — fiery silvery pink */}
+          <div className="flex justify-center pt-3 pb-0.5">
+            <span
+              className="font-bold text-lg tracking-wide bg-gradient-to-r from-rose-600 via-pink-100 to-pink-500 bg-clip-text text-transparent drop-shadow-[0_0_6px_rgba(236,72,153,0.35)]"
+            >
               TomeKeeper
             </span>
           </div>
-          {/* Bottom row: nav, also centered so it lives directly under the title */}
-          <nav className="flex justify-center flex-wrap">
+          {/* Nav: single row directly under the title (no wrap, tight spacing) */}
+          <nav className="flex justify-center items-center gap-0.5 pb-1">
             <NavLink to="/" end className={navLinkClass}>
               Home
             </NavLink>
