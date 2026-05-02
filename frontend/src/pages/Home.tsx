@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { CalendarSubscribe } from "../components/CalendarSubscribe";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
@@ -38,20 +37,6 @@ const EVENT_LABEL: Record<CalendarEventType, string> = {
   flash_sale: "Flash sale",
   publisher_sale_start: "Publisher sale starts",
   publisher_sale_end: "Publisher sale ends",
-};
-
-// Tiny glyph per event type — used in the day-detail list in place of the
-// old wide "FLASH SALE" / "PUBLISHER SALE STARTS" text column, which ate
-// horizontal space the event title could use instead.
-const EVENT_ICON: Record<CalendarEventType, string> = {
-  release: "📚",
-  ship: "📦",
-  deliver: "🎁",
-  preorder_open: "🛒",
-  preorder_close: "⏳",
-  flash_sale: "⚡",
-  publisher_sale_start: "🏷️",
-  publisher_sale_end: "🏷️",
 };
 
 // A shop with no name (orphan events) all share this slot. "_none" sorts last.
@@ -267,6 +252,22 @@ export function Home() {
     return map;
   }, [filteredEvents]);
 
+  // When the user taps a calendar day, scroll the day-detail panel
+  // below the grid into view so they don't have to thumb-scroll. We
+  // skip the very first render so opening the page doesn't auto-jump.
+  const dayDetailRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    dayDetailRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [selectedDate]);
+
   const grid = useMemo(() => buildGrid(currentMonth), [currentMonth]);
   const monthLabel = currentMonth.toLocaleDateString(undefined, {
     month: "long",
@@ -279,9 +280,6 @@ export function Home() {
   return (
     <div>
       <ProcessingBanner show={Boolean(bannerStatus)} message={bannerStatus} />
-      <div className="mb-3">
-        <CalendarSubscribe />
-      </div>
 
       {/* One-shot success banner after a multi-item AI screenshot scan
           drops the user back here with ?added=N. Shows a count plus, if
@@ -317,9 +315,13 @@ export function Home() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
+      {/* Calendar header row: month label + prev/today/next nav. The
+          calendar-subscribe surface used to live here; it has been
+          retired in favor of putting the day-action buttons in the
+          banner slot above the grid. */}
+      <div className="flex items-center justify-between gap-2 mb-3">
         <h1 className="text-base font-semibold text-pink-200">{monthLabel}</h1>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
             className="border border-zinc-700 px-2 py-0.5 text-sm text-pink-300 hover:bg-zinc-800"
@@ -386,6 +388,118 @@ export function Home() {
         </div>
       )}
 
+      {/* Banner-slot quick-add actions. These used to live below the
+          calendar grid (under the day-detail header); they were lifted
+          here, into the spot the old subscribe banner occupied, so the
+          most-used actions sit above the grid art. They still operate
+          on whatever day is currently selected via `selectedKey`. */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        <Link
+          to={`/flash-sales?starts=${selectedKey}`}
+          className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
+        >
+          + Flash sale
+        </Link>
+        <Link
+          to={`/publisher-sales-events?starts=${selectedKey}`}
+          className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"
+        >
+          🏷️ Publisher sale event
+        </Link>
+        <PhotoCaptureButton
+          to="/capture"
+          searchParams={{ release_date: selectedKey }}
+          mode="library"
+          label="✨ Scan screenshot (AI)"
+          aiScan
+        />
+        <QRScanButton
+          label="📱 Scan QR / ISBN"
+          onResult={(text) => {
+            const isbn = extractIsbn(text);
+            if (!isbn) {
+              setScanError(
+                `Couldn't read an ISBN from "${text.slice(0, 40)}${
+                  text.length > 40 ? "…" : ""
+                }". Try the barcode on the back cover.`,
+              );
+              return;
+            }
+            setScanError(null);
+            // Fire-and-forget the lookup so the QR modal closes
+            // immediately and the user gets a "looking up…" banner
+            // while we hit Open Library / Google Books. Whatever we
+            // find (or don't) gets forwarded into Capture's location
+            // state so the form lands prefilled — no extra tap.
+            setBannerStatus("🔎 Looking up ISBN…");
+            void (async () => {
+              try {
+                const result = await lookupIsbn(isbn);
+                const params = new URLSearchParams({
+                  isbn,
+                  from: "scan",
+                  release_date: selectedKey,
+                });
+                // Mirror the AI flow's location.state shape so Capture
+                // can use the same prefill code path.
+                const scanFields = result
+                  ? {
+                      title: result.title,
+                      author: result.author,
+                      series: result.series,
+                      series_number: result.series_number,
+                      edition_name: result.edition_name,
+                      publisher_or_shop: result.publisher_or_shop,
+                      retailer: result.retailer,
+                      release_date: result.release_date,
+                      isbn: result.isbn ?? isbn,
+                      edition_size: result.edition_size,
+                      special_features: result.special_features,
+                      preorder_start_at: result.preorder_start_at,
+                      preorder_end_at: result.preorder_end_at,
+                      notes: result.notes,
+                    }
+                  : null;
+                navigate(`/capture?${params.toString()}`, {
+                  state: {
+                    // Carry the cover the lookup found (if any) into
+                    // Capture so it lands as cover_url.
+                    photoDataUrl: result?.cover_url ?? undefined,
+                    scanFields,
+                    scanError:
+                      result && result.title
+                        ? null
+                        : "Couldn't find this ISBN online. Fill in the rest by hand.",
+                  },
+                });
+              } catch (e) {
+                // Network / parse failures land on Capture with just
+                // the ISBN prefilled; user can keep going.
+                const params = new URLSearchParams({
+                  isbn,
+                  from: "scan",
+                  release_date: selectedKey,
+                });
+                navigate(`/capture?${params.toString()}`, {
+                  state: {
+                    scanFields: null,
+                    scanError:
+                      e instanceof Error ? e.message : String(e),
+                  },
+                });
+              } finally {
+                setBannerStatus("");
+              }
+            })();
+          }}
+        />
+      </div>
+      {scanError && (
+        <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
+          {scanError}
+        </p>
+      )}
+
       {/* Month grid */}
       <div className="grid grid-cols-7 card">
         {WEEKDAYS.map((d) => (
@@ -448,7 +562,7 @@ export function Home() {
       </div>
 
       {/* Day detail */}
-      <div className="mt-4">
+      <div ref={dayDetailRef} className="mt-4 scroll-mt-2">
         <h2 className="text-sm font-semibold mb-2 text-pink-200">
           {selectedDate.toLocaleDateString(undefined, {
             weekday: "long",
@@ -457,121 +571,6 @@ export function Home() {
             year: "numeric",
           })}
         </h2>
-
-        {/* Quick-add actions for the selected day. These are always visible
-            so they work even when the calendar fetch fails.
-
-            "Take photo" lives only as the global floating button now (see
-            Layout.tsx) — having it here too duplicated the action. The
-            "+ Manual entry" link goes to /capture with the day pre-filled,
-            which is the manual-entry path for releases that drop during a
-            sale (or when the screenshot/QR paths aren't appropriate). */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          <Link
-            to={`/flash-sales?starts=${selectedKey}`}
-            className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-          >
-            + Flash sale
-          </Link>
-          <Link
-            to={`/publisher-sales-events?starts=${selectedKey}`}
-            className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"
-          >
-            🏷️ Publisher sale event
-          </Link>
-          <PhotoCaptureButton
-            to="/capture"
-            searchParams={{ release_date: selectedKey }}
-            mode="library"
-            label="✨ Scan screenshot (AI)"
-            aiScan
-          />
-          <QRScanButton
-            label="📱 Scan QR / ISBN"
-            onResult={(text) => {
-              const isbn = extractIsbn(text);
-              if (!isbn) {
-                setScanError(
-                  `Couldn't read an ISBN from "${text.slice(0, 40)}${
-                    text.length > 40 ? "…" : ""
-                  }". Try the barcode on the back cover.`,
-                );
-                return;
-              }
-              setScanError(null);
-              // Fire-and-forget the lookup so the QR modal closes
-              // immediately and the user gets a "looking up…" banner
-              // while we hit Open Library / Google Books. Whatever we
-              // find (or don't) gets forwarded into Capture's location
-              // state so the form lands prefilled — no extra tap.
-              setBannerStatus("🔎 Looking up ISBN…");
-              void (async () => {
-                try {
-                  const result = await lookupIsbn(isbn);
-                  const params = new URLSearchParams({
-                    isbn,
-                    from: "scan",
-                    release_date: selectedKey,
-                  });
-                  // Mirror the AI flow's location.state shape so Capture
-                  // can use the same prefill code path.
-                  const scanFields = result
-                    ? {
-                        title: result.title,
-                        author: result.author,
-                        series: result.series,
-                        series_number: result.series_number,
-                        edition_name: result.edition_name,
-                        publisher_or_shop: result.publisher_or_shop,
-                        retailer: result.retailer,
-                        release_date: result.release_date,
-                        isbn: result.isbn ?? isbn,
-                        edition_size: result.edition_size,
-                        special_features: result.special_features,
-                        preorder_start_at: result.preorder_start_at,
-                        preorder_end_at: result.preorder_end_at,
-                        notes: result.notes,
-                      }
-                    : null;
-                  navigate(`/capture?${params.toString()}`, {
-                    state: {
-                      // Carry the cover the lookup found (if any) into
-                      // Capture so it lands as cover_url.
-                      photoDataUrl: result?.cover_url ?? undefined,
-                      scanFields,
-                      scanError:
-                        result && result.title
-                          ? null
-                          : "Couldn't find this ISBN online. Fill in the rest by hand.",
-                    },
-                  });
-                } catch (e) {
-                  // Network / parse failures land on Capture with just
-                  // the ISBN prefilled; user can keep going.
-                  const params = new URLSearchParams({
-                    isbn,
-                    from: "scan",
-                    release_date: selectedKey,
-                  });
-                  navigate(`/capture?${params.toString()}`, {
-                    state: {
-                      scanFields: null,
-                      scanError:
-                        e instanceof Error ? e.message : String(e),
-                    },
-                  });
-                } finally {
-                  setBannerStatus("");
-                }
-              })();
-            }}
-          />
-        </div>
-        {scanError && (
-          <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
-            {scanError}
-          </p>
-        )}
 
         {loading && <p className="text-sm text-pink-400">Loading events…</p>}
         {error && (
@@ -585,54 +584,42 @@ export function Home() {
         {selectedEvents.length > 0 && (
           <ul className="card divide-y divide-zinc-800">
             {selectedEvents.map((ev, i) => {
-              const c = shopColor(ev.shop);
-              const icon = EVENT_ICON[ev.type] ?? "•";
               const target = eventDetailHref(ev);
               const Tag = target ? "button" : "div";
               return (
                 <li
                   key={`${ev.type}-${ev.flash_sale_id ?? ev.publisher_sale_event_id ?? ev.library_entry_id ?? ev.order_id ?? ev.edition_id ?? i}`}
                 >
+                  {/* Row layout mirrored from FlashSales.tsx so day-detail
+                      events read the same way as the flash-sale list:
+                      bold title up top, then a flex-wrap line of metadata
+                      (shop, event type, time), then optional notes line.
+                      The whole row stays tappable when there's a target so
+                      Janelle can still drill into the underlying detail
+                      screen. */}
                   <Tag
                     onClick={target ? () => navigate(target) : undefined}
                     type={target ? "button" : undefined}
                     className={[
-                      "w-full px-3 py-2 flex items-baseline gap-2 text-left",
+                      "w-full px-3 py-2 flex items-center gap-3 text-sm text-left",
                       target ? "hover:bg-zinc-800 active:bg-zinc-800" : "",
                     ].join(" ")}
                   >
-                    {/* Left rail: a thin colored bar matching the shop,
-                        plus a small emoji that hints at the event type.
-                        No label-text column — the title gets the full row.
-                        Tapping the row routes to the relevant detail/edit
-                        screen so the user can act on the event directly. */}
-                    <span
-                      className={[
-                        "inline-block w-1 self-stretch rounded-sm shrink-0",
-                        c.dot,
-                      ].join(" ")}
-                      title={ev.shop ?? "Other"}
-                    />
-                    <span
-                      className="text-base shrink-0 leading-none"
-                      title={EVENT_LABEL[ev.type]}
-                      aria-label={EVENT_LABEL[ev.type]}
-                    >
-                      {icon}
-                    </span>
-                    <span className="flex-1 text-sm text-pink-200 min-w-0">
-                      <span className="break-words">{ev.title}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-pink-200">
+                        {ev.title}
+                      </div>
+                      <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
+                        <span>{ev.shop ?? "Other"}</span>
+                        <span>{EVENT_LABEL[ev.type]}</span>
+                        {ev.at && <span>{formatTime(ev.at)}</span>}
+                      </div>
                       {ev.subtitle && (
-                        <span className="text-xs text-pink-400 ml-2 break-words">
+                        <div className="text-xs text-pink-500 truncate">
                           {ev.subtitle}
-                        </span>
+                        </div>
                       )}
-                    </span>
-                    {ev.at && (
-                      <span className="text-xs text-pink-300 tabular-nums shrink-0">
-                        {formatTime(ev.at)}
-                      </span>
-                    )}
+                    </div>
                     {target && (
                       <span
                         className="text-pink-500 shrink-0"
