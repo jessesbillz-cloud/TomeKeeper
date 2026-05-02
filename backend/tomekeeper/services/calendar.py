@@ -17,11 +17,25 @@ RLS on every base table still applies via the user-scoped client.
 
 from __future__ import annotations
 
-from datetime import date as date_type, datetime, timedelta
+from datetime import date as date_type, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from supabase import Client
 
 from ..models.calendar_event import CalendarEvent
+
+# Default IANA timezone used when the client doesn't pass `?tz=...`.
+# Janelle is on Pacific time, so an event recorded at 7pm PDT lands on
+# the calendar day she actually picked, not the next UTC day.
+DEFAULT_TZ = "America/Los_Angeles"
+
+
+def _resolve_zone(tz: str | None) -> ZoneInfo:
+    name = tz or DEFAULT_TZ
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo(DEFAULT_TZ)
 
 
 def _safe_date(value: str | None) -> date_type | None:
@@ -44,18 +58,29 @@ def _safe_dt(value: str | None) -> datetime | None:
         return None
 
 
-def _local_date(dt: datetime) -> date_type:
-    """Pick the calendar bucket for a timestamp.
+def _local_date(dt: datetime, zone: ZoneInfo) -> date_type:
+    """Pick the calendar bucket for a timestamp, in the user's local TZ.
 
-    We use the UTC date as the bucket key; the UI displays `at` for the
-    precise local time. Doing TZ-aware bucketing per-user is a follow-up.
+    PostgREST returns RFC3339 timestamps with a UTC offset; we convert to
+    the requested zone (Pacific by default) before extracting the date so
+    that a 7pm PDT event lands on the same calendar day Janelle picked,
+    not the next UTC day.
     """
-    return dt.date()
+    if dt.tzinfo is None:
+        # PostgREST always returns aware timestamps; defensively treat
+        # any naive datetime as UTC rather than raising.
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(zone).date()
 
 
 def get_calendar(
-    client: Client, *, start: date_type, end: date_type
+    client: Client,
+    *,
+    start: date_type,
+    end: date_type,
+    tz: str | None = None,
 ) -> list[CalendarEvent]:
+    zone = _resolve_zone(tz)
     events: list[CalendarEvent] = []
 
     # --- 1. Releases (from upcoming library entries) ------------------------
@@ -93,8 +118,13 @@ def get_calendar(
     # at all, then emit at most two events per edition (open / close), each
     # gated to the window. Editions that have neither timestamp set are
     # skipped by Postgres because both filters are OR'd via .or_().
-    start_dt = datetime.combine(start, datetime.min.time())
-    end_dt = datetime.combine(end, datetime.max.time())
+    #
+    # The SQL prefilter is widened by one day on each side so a timestamp
+    # that lives in UTC just outside the window but maps to a local-TZ day
+    # inside the window (e.g. 2026-07-01T03:00Z = 2026-06-30 20:00 PDT)
+    # still gets picked up. The local-date check below clamps it back.
+    start_dt = datetime.combine(start - timedelta(days=1), datetime.min.time())
+    end_dt = datetime.combine(end + timedelta(days=1), datetime.max.time())
 
     res_pre = (
         client.table("editions")
@@ -118,7 +148,7 @@ def get_calendar(
 
         po_start = _safe_dt(row.get("preorder_start_at"))
         if po_start is not None:
-            d = _local_date(po_start)
+            d = _local_date(po_start, zone)
             if start <= d <= end:
                 events.append(
                     CalendarEvent(
@@ -134,7 +164,7 @@ def get_calendar(
 
         po_end = _safe_dt(row.get("preorder_end_at"))
         if po_end is not None:
-            d = _local_date(po_end)
+            d = _local_date(po_end, zone)
             if start <= d <= end:
                 events.append(
                     CalendarEvent(
@@ -164,8 +194,10 @@ def get_calendar(
         e = _safe_dt(row.get("ends_at"))
         if s is None or e is None:
             continue
-        day = max(_local_date(s), start)
-        last = min(_local_date(e), end)
+        s_local = _local_date(s, zone)
+        e_local = _local_date(e, zone)
+        day = max(s_local, start)
+        last = min(e_local, end)
         title = row.get("title") or f"Flash sale ({row.get('shop')})"
         while day <= last:
             events.append(
@@ -177,7 +209,7 @@ def get_calendar(
                     shop=row.get("shop"),
                     # Carry `at` only on the first day so the UI can show
                     # the precise opening time without repeating it.
-                    at=s if day == _local_date(s) else None,
+                    at=s if day == s_local else None,
                     edition_id=row.get("edition_id"),
                     flash_sale_id=row.get("id"),
                 )

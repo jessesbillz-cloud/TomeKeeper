@@ -16,6 +16,13 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 def get_calendar(
     start: date_type | None = Query(None, description="Window start date (inclusive)"),
     end: date_type | None = Query(None, description="Window end date (inclusive)"),
+    tz: str | None = Query(
+        None,
+        description=(
+            "IANA timezone used to bucket events onto calendar days "
+            "(default America/Los_Angeles)."
+        ),
+    ),
     client: Client = Depends(user_supabase),
 ):
     """Aggregated calendar events. Defaults to a 90-day window starting today."""
@@ -23,4 +30,4 @@ def get_calendar(
         start = date_type.today()
     if end is None:
         end = start + timedelta(days=90)
-    return svc.get_calendar(client, start=start, end=end)
+    return svc.get_calendar(client, start=start, end=end, tz=tz)
