@@ -347,45 +347,70 @@ export function Home() {
         </div>
       </div>
 
-      {/* Shop filter chips */}
+      {/* Shop filter — collapsed by default into a tiny disclosure. The
+          per-shop chip strip used to live here always-on, but with a
+          dozen shops it cluttered the top of the home screen. The
+          chips now hide behind a "Filter shops" toggle; open state is
+          local DOM (<details>) so we don't need extra React state. The
+          summary shows "(N/M)" when a filter is active so the user can
+          tell at a glance whether something's hidden. */}
       {shops.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          <button
-            onClick={() => setActiveShops(null)}
-            className={[
-              "text-xs px-2 py-0.5 border",
-              activeShops === null
-                ? "border-pink-400 bg-pink-500 text-black"
-                : "border-zinc-700 bg-zinc-900 text-pink-300 hover:bg-zinc-800",
-            ].join(" ")}
-          >
-            All shops
-          </button>
-          {shops.map((key) => {
-            const c = shopColor(key === UNKNOWN_SHOP ? null : key);
-            const on = isShopActive(key);
-            return (
-              <button
-                key={key}
-                onClick={() => toggleShop(key)}
-                className={[
-                  "text-xs px-2 py-0.5 border flex items-center gap-1.5",
-                  on
-                    ? `${c.chip} border-transparent`
-                    : "bg-zinc-900 text-pink-500 border-zinc-700 hover:bg-zinc-800",
-                ].join(" ")}
-              >
-                <span
+        <details className="mb-3 group">
+          <summary className="list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1.5 cursor-pointer text-xs px-2 py-0.5 border border-zinc-700 bg-zinc-900 text-pink-300 hover:bg-zinc-800 select-none">
+            <span
+              aria-hidden
+              className="inline-block transition-transform group-open:rotate-90"
+            >
+              ›
+            </span>
+            <span>
+              Filter shops
+              {activeShops !== null && (
+                <span className="text-pink-200">
+                  {" "}
+                  ({activeShops.size}/{shops.length})
+                </span>
+              )}
+            </span>
+          </summary>
+          <div className="flex flex-wrap gap-1 mt-2">
+            <button
+              onClick={() => setActiveShops(null)}
+              className={[
+                "text-xs px-2 py-0.5 border",
+                activeShops === null
+                  ? "border-pink-400 bg-pink-500 text-black"
+                  : "border-zinc-700 bg-zinc-900 text-pink-300 hover:bg-zinc-800",
+              ].join(" ")}
+            >
+              All shops
+            </button>
+            {shops.map((key) => {
+              const c = shopColor(key === UNKNOWN_SHOP ? null : key);
+              const on = isShopActive(key);
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleShop(key)}
                   className={[
-                    "inline-block w-2 h-2 rounded-full",
-                    on ? c.dot : "bg-zinc-600",
+                    "text-xs px-2 py-0.5 border flex items-center gap-1.5",
+                    on
+                      ? `${c.chip} border-transparent`
+                      : "bg-zinc-900 text-pink-500 border-zinc-700 hover:bg-zinc-800",
                   ].join(" ")}
-                />
-                {key === UNKNOWN_SHOP ? "Other" : key}
-              </button>
-            );
-          })}
-        </div>
+                >
+                  <span
+                    className={[
+                      "inline-block w-2 h-2 rounded-full",
+                      on ? c.dot : "bg-zinc-600",
+                    ].join(" ")}
+                  />
+                  {key === UNKNOWN_SHOP ? "Other" : key}
+                </button>
+              );
+            })}
+          </div>
+        </details>
       )}
 
       {/* Banner-slot quick-add actions. These used to live below the
