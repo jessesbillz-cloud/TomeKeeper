@@ -145,6 +145,13 @@ export interface CalendarEvent {
   subtitle: string | null;
   shop: string | null;
   at: ISODateTime | null;
+  /** Range-style events (flash sales) carry the full window so the day-
+   *  detail card can render the same `start → end` row the Flash Sales
+   *  list page uses. Null on point events (releases, ships, etc.). */
+  starts_at?: ISODateTime | null;
+  ends_at?: ISODateTime | null;
+  url?: string | null;
+  notes?: string | null;
   edition_id: UUID | null;
   library_entry_id: UUID | null;
   order_id: UUID | null;

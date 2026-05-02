@@ -119,6 +119,20 @@ function formatTime(at: string): string {
 }
 
 /**
+ * Format an ISO timestamp as `YYYY-MM-DD HH:MM` in the user's local
+ * timezone — matches the formatting used by the Flash Sales list page so
+ * a day-detail row reads identically to a flash-sale row.
+ */
+function fromISOLocal(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+    d.getDate(),
+  )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * Where should tapping a calendar event take the user?
  *  - releases / preorders / ships / deliveries → the edition detail page,
  *    which is the canonical place to view + edit a book and its order.
@@ -615,13 +629,14 @@ export function Home() {
                 <li
                   key={`${ev.type}-${ev.flash_sale_id ?? ev.publisher_sale_event_id ?? ev.library_entry_id ?? ev.order_id ?? ev.edition_id ?? i}`}
                 >
-                  {/* Row layout mirrored from FlashSales.tsx so day-detail
-                      events read the same way as the flash-sale list:
-                      bold title up top, then a flex-wrap line of metadata
-                      (shop, event type, time), then optional notes line.
-                      The whole row stays tappable when there's a target so
-                      Janelle can still drill into the underlying detail
-                      screen. */}
+                  {/* Row layout mirrored EXACTLY from FlashSales.tsx so a
+                      day-detail row reads identically to a flash-sale row:
+                      bold title; then a flex-wrap line with shop, the
+                      `start → end` window (or fallback to event-type label
+                      + at), and a "link" anchor when there's a URL; then
+                      a notes line. The whole row stays tappable when
+                      there's a target so Janelle can still drill into
+                      the underlying detail screen. */}
                   <Tag
                     onClick={target ? () => navigate(target) : undefined}
                     type={target ? "button" : undefined}
@@ -636,12 +651,32 @@ export function Home() {
                       </div>
                       <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
                         <span>{ev.shop ?? "Other"}</span>
-                        <span>{EVENT_LABEL[ev.type]}</span>
-                        {ev.at && <span>{formatTime(ev.at)}</span>}
+                        {ev.starts_at && ev.ends_at ? (
+                          <span>
+                            {fromISOLocal(ev.starts_at)} →{" "}
+                            {fromISOLocal(ev.ends_at)}
+                          </span>
+                        ) : (
+                          <>
+                            <span>{EVENT_LABEL[ev.type]}</span>
+                            {ev.at && <span>{formatTime(ev.at)}</span>}
+                          </>
+                        )}
+                        {ev.url && (
+                          <a
+                            href={ev.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-pink-300 underline"
+                          >
+                            link
+                          </a>
+                        )}
                       </div>
-                      {ev.subtitle && (
+                      {(ev.notes ?? ev.subtitle) && (
                         <div className="text-xs text-pink-500 truncate">
-                          {ev.subtitle}
+                          {ev.notes ?? ev.subtitle}
                         </div>
                       )}
                     </div>

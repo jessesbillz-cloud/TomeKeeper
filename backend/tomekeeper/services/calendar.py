@@ -184,7 +184,7 @@ def get_calendar(
     # the requested calendar window.
     res_fs = (
         client.table("flash_sales")
-        .select("id, shop, title, url, starts_at, ends_at, edition_id")
+        .select("id, shop, title, url, starts_at, ends_at, edition_id, notes")
         .lte("starts_at", end_dt.isoformat())
         .gte("ends_at", start_dt.isoformat())
         .execute()
@@ -205,11 +205,17 @@ def get_calendar(
                     date=day,
                     type="flash_sale",
                     title=title,
-                    subtitle=row.get("shop"),
                     shop=row.get("shop"),
                     # Carry `at` only on the first day so the UI can show
                     # the precise opening time without repeating it.
                     at=s if day == s_local else None,
+                    # Carry the full window + url + notes on every day of
+                    # the sale so the day-detail card on Home can render
+                    # the same row layout the Flash Sales list uses.
+                    starts_at=s,
+                    ends_at=e,
+                    url=row.get("url"),
+                    notes=row.get("notes"),
                     edition_id=row.get("edition_id"),
                     flash_sale_id=row.get("id"),
                 )
