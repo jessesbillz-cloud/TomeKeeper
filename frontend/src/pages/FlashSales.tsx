@@ -52,6 +52,23 @@ function fromISO(iso: string): string {
   )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Display formatter — `Mon DD, H:MM AM/PM` in the user's local
+ * timezone (e.g. "May 15, 2:00 PM"). Year is intentionally dropped
+ * so the row stays compact and matches the calendar day-detail
+ * panel byte-for-byte.
+ */
+function fromISODisplay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 /** Strip the time component of a datetime-local string -> "YYYY-MM-DD". */
 function localDay(iso: string): string {
   const d = new Date(iso);
@@ -490,8 +507,8 @@ export function FlashSales() {
                 <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
                   <span>{s.shop}</span>
                   <span>
-                    {fromISO(s.starts_at).replace("T", " ")} →{" "}
-                    {fromISO(s.ends_at).replace("T", " ")}
+                    {fromISODisplay(s.starts_at)} →{" "}
+                    {fromISODisplay(s.ends_at)}
                   </span>
                   {s.url && (
                     <a

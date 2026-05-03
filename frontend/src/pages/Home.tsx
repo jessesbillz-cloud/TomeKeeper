@@ -6,7 +6,7 @@ import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
 import { get } from "../lib/api";
 import { lookupIsbn } from "../lib/isbnLookup";
-import type { CalendarEvent, CalendarEventType } from "../lib/types";
+import type { CalendarEvent } from "../lib/types";
 
 /**
  * Pull a likely ISBN out of a scanned QR/barcode payload.
@@ -27,17 +27,6 @@ function extractIsbn(text: string): string | null {
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const EVENT_LABEL: Record<CalendarEventType, string> = {
-  release: "Release",
-  ship: "Ship",
-  deliver: "Deliver",
-  preorder_open: "Preorder opens",
-  preorder_close: "Preorder closes",
-  flash_sale: "Flash sale",
-  publisher_sale_start: "Publisher sale starts",
-  publisher_sale_end: "Publisher sale ends",
-};
 
 // A shop with no name (orphan events) all share this slot. "_none" sorts last.
 const UNKNOWN_SHOP = "_none";
@@ -110,26 +99,21 @@ function buildGrid(month: Date): Date[] {
   });
 }
 
-function formatTime(at: string): string {
-  const d = new Date(at);
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 /**
- * Format an ISO timestamp as `YYYY-MM-DD HH:MM` in the user's local
- * timezone — matches the formatting used by the Flash Sales list page so
- * a day-detail row reads identically to a flash-sale row.
+ * Format an ISO timestamp as `Mon DD, H:MM AM/PM` in the user's local
+ * timezone (e.g. "May 15, 2:00 PM"). Year is intentionally omitted —
+ * the day-detail header above already shows the full date, so the meta
+ * line just needs month, day, and time.
  */
 function fromISOLocal(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-    d.getDate(),
-  )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /**
@@ -631,12 +615,11 @@ export function Home() {
                 >
                   {/* Row layout mirrored EXACTLY from FlashSales.tsx so a
                       day-detail row reads identically to a flash-sale row:
-                      bold title; then a flex-wrap line with shop, the
-                      `start → end` window (or fallback to event-type label
-                      + at), and a "link" anchor when there's a URL; then
-                      a notes line. The whole row stays tappable when
-                      there's a target so Janelle can still drill into
-                      the underlying detail screen. */}
+                      bold title on top, then a flex-wrap meta line with
+                      shop and the date/time (range when we have one,
+                      otherwise the single `at` timestamp), then a notes
+                      line. No event-type label, no "Other" placeholder,
+                      no chevron — just title, shop, time, notes. */}
                   <Tag
                     onClick={target ? () => navigate(target) : undefined}
                     type={target ? "button" : undefined}
@@ -650,18 +633,15 @@ export function Home() {
                         {ev.title}
                       </div>
                       <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
-                        <span>{ev.shop ?? "Other"}</span>
+                        {ev.shop && <span>{ev.shop}</span>}
                         {ev.starts_at && ev.ends_at ? (
                           <span>
                             {fromISOLocal(ev.starts_at)} →{" "}
                             {fromISOLocal(ev.ends_at)}
                           </span>
-                        ) : (
-                          <>
-                            <span>{EVENT_LABEL[ev.type]}</span>
-                            {ev.at && <span>{formatTime(ev.at)}</span>}
-                          </>
-                        )}
+                        ) : ev.at ? (
+                          <span>{fromISOLocal(ev.at)}</span>
+                        ) : null}
                         {ev.url && (
                           <a
                             href={ev.url}
@@ -680,14 +660,6 @@ export function Home() {
                         </div>
                       )}
                     </div>
-                    {target && (
-                      <span
-                        className="text-pink-500 shrink-0"
-                        aria-hidden="true"
-                      >
-                        ›
-                      </span>
-                    )}
                   </Tag>
                 </li>
               );
