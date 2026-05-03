@@ -11,6 +11,13 @@ interface CalendarEvent {
   subtitle?: string | null;
   shop?: string | null;
   at?: string | null;
+  /** Range-style events (flash sales, publisher sales) carry the full
+   *  window so the day-detail card can render the same `start → end`
+   *  row the FlashSales list page uses. Null on point events. */
+  starts_at?: string | null;
+  ends_at?: string | null;
+  url?: string | null;
+  notes?: string | null;
   edition_id?: string | null;
   library_entry_id?: string | null;
   order_id?: string | null;
@@ -128,14 +135,16 @@ Deno.serve(async (req: Request) => {
       // 3. Flash sales overlapping the window
       supabase
         .from("flash_sales")
-        .select("id, shop, title, url, starts_at, ends_at, edition_id")
+        .select("id, shop, title, url, starts_at, ends_at, notes, edition_id")
         .lte("starts_at", endDt)
         .gte("ends_at", startDt),
 
       // 4. Publisher sales events overlapping the window
       supabase
         .from("publisher_sales_events")
-        .select("id, publisher, title, url, starts_at, ends_at, edition_id")
+        .select(
+          "id, publisher, title, url, starts_at, ends_at, notes, edition_id",
+        )
         .lte("starts_at", endDt)
         .gte("ends_at", startDt),
 
@@ -246,6 +255,13 @@ Deno.serve(async (req: Request) => {
         subtitle: r.shop as string,
         shop: r.shop as string,
         at: day === sDate ? sAt : null,
+        // Carry the full window + url + notes through so the day-detail
+        // panel can render the exact same row the FlashSales list page
+        // shows (title / shop / start → end / link / notes).
+        starts_at: sAt,
+        ends_at: eAt,
+        url: (r.url as string) || null,
+        notes: (r.notes as string) || null,
         edition_id: (r.edition_id as string) || null,
         flash_sale_id: r.id as string,
       });
@@ -275,6 +291,10 @@ Deno.serve(async (req: Request) => {
         subtitle: r.publisher as string,
         shop: r.publisher as string,
         at: sAt,
+        starts_at: sAt,
+        ends_at: eAt,
+        url: (r.url as string) || null,
+        notes: (r.notes as string) || null,
         edition_id: (r.edition_id as string) || null,
         publisher_sale_event_id: r.id as string,
       });
@@ -287,6 +307,10 @@ Deno.serve(async (req: Request) => {
         subtitle: r.publisher as string,
         shop: r.publisher as string,
         at: eAt,
+        starts_at: sAt,
+        ends_at: eAt,
+        url: (r.url as string) || null,
+        notes: (r.notes as string) || null,
         edition_id: (r.edition_id as string) || null,
         publisher_sale_event_id: r.id as string,
       });

@@ -4,15 +4,15 @@
 # What this does, in order:
 #   1. Sets ANTHROPIC_API_KEY as a Supabase edge function secret
 #      (only if you pass it as an env var or argument).
-#   2. Deploys the three new edge functions:
-#      assistant-extract, subscriptions, subscription-watch.
+#   2. Deploys the edge functions:
+#      assistant-extract, subscriptions, subscription-watch, calendar.
 #   3. Builds the frontend.
 #
 # Usage:
 #   ./deploy.sh
-#       — assumes ANTHROPIC_API_KEY is already set (skips step 1).
+#       - assumes ANTHROPIC_API_KEY is already set (skips step 1).
 #   ANTHROPIC_API_KEY=sk-ant-... ./deploy.sh
-#       — sets/refreshes the secret too.
+#       - sets/refreshes the secret too.
 #
 # Prereqs:
 #   - supabase CLI installed (`brew install supabase/tap/supabase`)
@@ -23,10 +23,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-bold() { printf '\033[1m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
+bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
-red() { printf '\033[31m%s\033[0m\n' "$*"; }
+red()    { printf '\033[31m%s\033[0m\n' "$*"; }
 
 if ! command -v supabase >/dev/null 2>&1; then
     red "supabase CLI not found. Install with: brew install supabase/tap/supabase"
@@ -35,27 +35,30 @@ fi
 
 # --- 1. Anthropic key (only if provided) -----------------------------------
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-    bold "Setting ANTHROPIC_API_KEY secret…"
+    bold "Setting ANTHROPIC_API_KEY secret..."
     supabase secrets set "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
-    green "  ✓ secret set"
+    green "  [ok] secret set"
 else
     yellow "Skipping secret set (ANTHROPIC_API_KEY not provided in env)."
-    yellow "If you've never set it before, run once:"
+    yellow "If you have never set it before, run once:"
     yellow "    ANTHROPIC_API_KEY=sk-ant-... ./deploy.sh"
 fi
 
 # --- 2. Deploy edge functions ----------------------------------------------
-for fn in assistant-extract subscriptions subscription-watch; do
-    bold "Deploying $fn…"
+# 'calendar' is included so the day-detail panel on Home can pick up
+# starts_at/ends_at/url/notes for flash sales (matches the FlashSales
+# list page byte-for-byte).
+for fn in assistant-extract subscriptions subscription-watch calendar; do
+    bold "Deploying ${fn}..."
     supabase functions deploy "$fn"
-    green "  ✓ $fn deployed"
+    green "  [ok] ${fn} deployed"
 done
 
 # --- 3. Build frontend -----------------------------------------------------
-bold "Building frontend…"
+bold "Building frontend..."
 ( cd frontend && npm run build )
-green "  ✓ frontend built → frontend/dist"
+green "  [ok] frontend built -> frontend/dist"
 
 bold "All done."
 echo
-echo "Frontend bundle is in frontend/dist — push it to wherever you host (gh-pages, netlify, etc)."
+echo "Frontend bundle is in frontend/dist - push it to wherever you host (gh-pages, netlify, etc)."
