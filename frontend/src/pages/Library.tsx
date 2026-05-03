@@ -40,7 +40,6 @@ export function Library() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<LibraryStatus | "all">("all");
-  const [publisherFilter, setPublisherFilter] = useState<string | "all">("all");
   const [query, setQuery] = useState("");
 
   async function load() {
@@ -119,16 +118,25 @@ export function Library() {
     }
   }
 
+  /**
+   * Replace the cached `work` for every row whose edition references the
+   * given work id. Called after the inline title-edit form on a row PATCHes
+   * /works/{id} so the UI reflects the new title without a full reload.
+   * Useful in particular for AI-scanned entries where the extracted title
+   * is approximate and Janelle wants to clean it up after the fact.
+   */
+  function replaceWork(updated: Work) {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.edition?.work_id === updated.id ? { ...r, work: updated } : r,
+      ),
+    );
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (filter !== "all" && r.entry.status !== filter) return false;
-      if (
-        publisherFilter !== "all" &&
-        (r.edition?.publisher_or_shop ?? "") !== publisherFilter
-      ) {
-        return false;
-      }
       if (!q) return true;
       const hay = [
         r.work?.title,
@@ -144,7 +152,7 @@ export function Library() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [rows, filter, publisherFilter, query]);
+  }, [rows, filter, query]);
 
   // Per-status counts. Zero-count statuses are hidden from the filter row.
   const counts = useMemo(() => {
@@ -152,21 +160,6 @@ export function Library() {
     for (const s of STATUS_OPTIONS) c[s] = 0;
     for (const r of rows) c[r.entry.status] = (c[r.entry.status] ?? 0) + 1;
     return c;
-  }, [rows]);
-
-  // Publishers / shops actually present in the user's library, sorted by
-  // how many rows each one has so the heaviest ones lead the row. Tied
-  // counts fall back to alphabetical for stability.
-  const publishers = useMemo(() => {
-    const seen = new Map<string, number>();
-    for (const r of rows) {
-      const p = r.edition?.publisher_or_shop?.trim();
-      if (!p) continue;
-      seen.set(p, (seen.get(p) ?? 0) + 1);
-    }
-    return Array.from(seen.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([name, count]) => ({ name, count }));
   }, [rows]);
 
   return (
@@ -206,30 +199,6 @@ export function Library() {
         />
       </div>
 
-      {/* Publisher / shop filter row. Only renders if the user has at least
-          one publisher tagged on an edition (otherwise the row would be a
-          single "All publishers" chip with nothing to compare against). */}
-      {publishers.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          <span className="text-[11px] uppercase tracking-wide text-pink-400 mr-1">
-            Publisher / shop:
-          </span>
-          <Chip
-            on={publisherFilter === "all"}
-            onClick={() => setPublisherFilter("all")}
-            label={`All (${rows.length})`}
-          />
-          {publishers.map((p) => (
-            <Chip
-              key={p.name}
-              on={publisherFilter === p.name}
-              onClick={() => setPublisherFilter(p.name)}
-              label={`${p.name} (${p.count})`}
-            />
-          ))}
-        </div>
-      )}
-
       {loading && <p className="text-sm text-pink-400">Loading…</p>}
       {error && (
         <p className="text-sm text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
@@ -252,6 +221,7 @@ export function Library() {
               row={row}
               onSetStatus={(s) => void setStatus(row.entry.id, s)}
               onRemove={() => void removeEntry(row.entry.id)}
+              onWorkUpdated={replaceWork}
             />
           ))}
         </div>
@@ -264,13 +234,24 @@ function LibraryRow({
   row,
   onSetStatus,
   onRemove,
+  onWorkUpdated,
 }: {
   row: Row;
   onSetStatus: (s: LibraryStatus) => void;
   onRemove: () => void;
+  onWorkUpdated: (work: Work) => void;
 }) {
   const { entry, edition, work } = row;
   const [open, setOpen] = useState(false);
+
+  // Inline title edit. `editingTitle === null` means we're not editing;
+  // a string means the input is open and holding the current draft.
+  // The AI scan path often produces approximate titles ("Fourth Wing
+  // Special Ed.") that Janelle wants to clean up after the fact, so the
+  // edit lives right next to the title in the expanded section.
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
 
   function confirmRemove() {
     const title = work?.title ?? "this book";
@@ -279,6 +260,32 @@ function LibraryRow({
     // won't be doing this often.
     if (window.confirm(`Remove "${title}" from your library?`)) {
       onRemove();
+    }
+  }
+
+  async function saveTitle() {
+    if (!work || editingTitle === null) return;
+    const next = editingTitle.trim();
+    if (!next) {
+      setTitleError("Title can't be empty.");
+      return;
+    }
+    if (next === work.title) {
+      // No-op — just close the editor.
+      setEditingTitle(null);
+      setTitleError(null);
+      return;
+    }
+    setSavingTitle(true);
+    setTitleError(null);
+    try {
+      const updated = await patch<Work>(`/works/${work.id}`, { title: next });
+      onWorkUpdated(updated);
+      setEditingTitle(null);
+    } catch (e: unknown) {
+      setTitleError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingTitle(false);
     }
   }
 
@@ -303,15 +310,6 @@ function LibraryRow({
           >
             ▸
           </span>
-          <div className="w-10 h-14 bg-zinc-800 border border-zinc-700 shrink-0 overflow-hidden">
-            {edition?.cover_url && (
-              <img
-                src={edition.cover_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            )}
-          </div>
           <div className="flex-1 min-w-0">
             {/* Title — full, wrapping; never truncated. */}
             <div className="text-sm font-medium text-pink-200 break-words">
@@ -357,6 +355,66 @@ function LibraryRow({
       {/* Expanded details */}
       {open && (
         <div className="px-3 pb-3 pl-12 text-xs text-pink-200 space-y-1">
+          {/* Inline title editor — only shown when the row has an underlying
+              `work` row to PATCH against. AI-scanned entries always do. */}
+          {work && (
+            <div>
+              {editingTitle === null ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTitle(work.title ?? "");
+                    setTitleError(null);
+                  }}
+                  className="text-pink-300 underline text-xs"
+                >
+                  ✏️ Edit title
+                </button>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveTitle();
+                        if (e.key === "Escape") {
+                          setEditingTitle(null);
+                          setTitleError(null);
+                        }
+                      }}
+                      disabled={savingTitle}
+                      className="flex-1 min-w-0 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm"
+                      placeholder="Book title"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void saveTitle()}
+                      disabled={savingTitle}
+                      className="text-xs bg-pink-500 text-black px-2 py-1 hover:bg-pink-400 disabled:opacity-50"
+                    >
+                      {savingTitle ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTitle(null);
+                        setTitleError(null);
+                      }}
+                      disabled={savingTitle}
+                      className="text-xs border border-zinc-700 text-pink-300 px-2 py-1 hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {titleError && (
+                    <div className="text-red-300">{titleError}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {edition?.edition_name && (
             <div>
               <span className="text-pink-400">Edition: </span>
