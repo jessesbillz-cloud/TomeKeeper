@@ -504,13 +504,17 @@ export function FlashSales() {
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-pink-200">{s.title ?? s.shop}</div>
-                <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
-                  <span>{s.shop}</span>
-                  <span>
-                    {fromISODisplay(s.starts_at)} →{" "}
-                    {fromISODisplay(s.ends_at)}
-                  </span>
-                  {s.url && (
+                {/* Stacked meta — shop, time range, link each on their
+                    own line. Matches the calendar day-detail row exactly
+                    so the two surfaces read identically regardless of
+                    string length. */}
+                <div className="text-xs text-pink-400">{s.shop}</div>
+                <div className="text-xs text-pink-400">
+                  {fromISODisplay(s.starts_at)} →{" "}
+                  {fromISODisplay(s.ends_at)}
+                </div>
+                {s.url && (
+                  <div className="text-xs">
                     <a
                       href={s.url}
                       target="_blank"
@@ -519,8 +523,8 @@ export function FlashSales() {
                     >
                       link
                     </a>
-                  )}
-                </div>
+                  </div>
+                )}
                 {s.notes && (
                   <div className="text-xs text-pink-500 truncate">
                     {s.notes}

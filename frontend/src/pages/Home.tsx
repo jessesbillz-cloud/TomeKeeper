@@ -632,17 +632,28 @@ export function Home() {
                       <div className="font-medium text-pink-200">
                         {ev.title}
                       </div>
-                      <div className="text-xs text-pink-400 flex flex-wrap gap-x-3">
-                        {ev.shop && <span>{ev.shop}</span>}
-                        {ev.starts_at && ev.ends_at ? (
-                          <span>
-                            {fromISOLocal(ev.starts_at)} →{" "}
-                            {fromISOLocal(ev.ends_at)}
-                          </span>
-                        ) : ev.at ? (
-                          <span>{fromISOLocal(ev.at)}</span>
-                        ) : null}
-                        {ev.url && (
+                      {/* Each meta element on its own line so the row
+                          looks identical to the FlashSales list row even
+                          when the strings are short enough to fit on one
+                          line. (We were getting `Grim Gates  May 4 at
+                          12:00 AM` collapsed onto one line because the
+                          old flex-wrap container only wrapped on
+                          overflow.) */}
+                      {ev.shop && (
+                        <div className="text-xs text-pink-400">{ev.shop}</div>
+                      )}
+                      {ev.starts_at && ev.ends_at ? (
+                        <div className="text-xs text-pink-400">
+                          {fromISOLocal(ev.starts_at)} →{" "}
+                          {fromISOLocal(ev.ends_at)}
+                        </div>
+                      ) : ev.at ? (
+                        <div className="text-xs text-pink-400">
+                          {fromISOLocal(ev.at)}
+                        </div>
+                      ) : null}
+                      {ev.url && (
+                        <div className="text-xs">
                           <a
                             href={ev.url}
                             target="_blank"
@@ -652,11 +663,11 @@ export function Home() {
                           >
                             link
                           </a>
-                        )}
-                      </div>
-                      {(ev.notes ?? ev.subtitle) && (
+                        </div>
+                      )}
+                      {ev.notes && (
                         <div className="text-xs text-pink-500 truncate">
-                          {ev.notes ?? ev.subtitle}
+                          {ev.notes}
                         </div>
                       )}
                     </div>
