@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { del, get, patch } from "../lib/api";
@@ -29,71 +29,123 @@ const STATUS_CHIP: Record<LibraryStatus, string> = {
   missed: "bg-rose-900/60 text-rose-200",
 };
 
+// Server-side limit for a single search response. The library can hold
+// unlimited books — we just never load them all into the browser. If a
+// search hits this ceiling we tell the user to refine.
+const PAGE_LIMIT = 100;
+
+// The /library edge function now returns each entry with its edition
+// and work embedded inline, so a single GET hydrates everything we
+// need to render a row.
+type LibraryEntryWithEmbeds = LibraryEntry & {
+  edition: (Edition & { work: Work | null }) | null;
+};
+
 type Row = {
   entry: LibraryEntry;
   edition: Edition | null;
   work: Work | null;
 };
 
+function rowFromEmbed(item: LibraryEntryWithEmbeds): Row {
+  // Pull the embedded edition + work apart so each shape matches the
+  // plain types LibraryRow expects.
+  const { edition: embedded, ...entry } = item;
+  if (!embedded) {
+    return { entry: entry as LibraryEntry, edition: null, work: null };
+  }
+  const { work, ...edition } = embedded;
+  return {
+    entry: entry as LibraryEntry,
+    edition: edition as Edition,
+    work: work ?? null,
+  };
+}
+
 export function Library() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<LibraryStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<LibraryStatus | "all">(
+    "all",
+  );
   const [query, setQuery] = useState("");
+  // Tracks whether we actually ran a search. Used to distinguish
+  // "empty state — type to search" from "we searched and got 0 hits".
+  const [hasSearched, setHasSearched] = useState(false);
+  const [truncated, setTruncated] = useState(false);
 
-  async function load() {
+  // Bumped on every status change / remove so the search effect can
+  // ignore late responses from cancelled requests.
+  const requestSeq = useRef(0);
+
+  /**
+   * Run a server-side search. The library can be arbitrarily large
+   * (3000+ books), so we never bulk-load — only what matches `q` and/or
+   * `statusFilter`, capped at PAGE_LIMIT. The endpoint embeds
+   * edition + work in each row so this is a single round trip.
+   */
+  async function runSearch(q: string, status: LibraryStatus | "all") {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
     try {
-      const entries = await get<LibraryEntry[]>("/library?limit=500");
-      const editionIds = Array.from(new Set(entries.map((e) => e.edition_id)));
-      const editions = await Promise.all(
-        editionIds.map((id) =>
-          get<Edition>(`/editions/${id}`).catch(() => null),
-        ),
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (status !== "all") params.set("status_filter", status);
+      params.set("limit", String(PAGE_LIMIT));
+      const data = await get<LibraryEntryWithEmbeds[]>(
+        `/library?${params.toString()}`,
       );
-      const editionById = new Map<string, Edition | null>();
-      editionIds.forEach((id, i) => editionById.set(id, editions[i]));
-      const workIds = Array.from(
-        new Set(
-          editions.filter((e): e is Edition => !!e).map((e) => e.work_id),
-        ),
-      );
-      const works = await Promise.all(
-        workIds.map((id) => get<Work>(`/works/${id}`).catch(() => null)),
-      );
-      const workById = new Map<string, Work | null>();
-      workIds.forEach((id, i) => workById.set(id, works[i]));
-      setRows(
-        entries.map((entry) => {
-          const edition = editionById.get(entry.edition_id) ?? null;
-          const work = edition ? workById.get(edition.work_id) ?? null : null;
-          return { entry, edition, work };
-        }),
-      );
+      // Drop the response if a newer search has already been kicked off.
+      if (seq !== requestSeq.current) return;
+      setRows(data.map(rowFromEmbed));
+      setTruncated(data.length >= PAGE_LIMIT);
+      setHasSearched(true);
     } catch (e: unknown) {
+      if (seq !== requestSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }
 
+  // Debounced search: refire 300ms after the user stops typing / changes
+  // the status filter. If both inputs are empty we clear results and
+  // show the prompt-to-search empty state — no fetch at all.
   useEffect(() => {
-    void load();
-  }, []);
+    const q = query.trim();
+    if (!q && statusFilter === "all") {
+      requestSeq.current++; // cancel any in-flight
+      setRows([]);
+      setTruncated(false);
+      setHasSearched(false);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void runSearch(q, statusFilter);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, statusFilter]);
 
   async function setStatus(entryId: string, status: LibraryStatus) {
+    // Optimistic — flip the chip immediately, then PATCH. If the
+    // server rejects we surface the error and re-run the current
+    // search to resync.
     setRows((prev) =>
       prev.map((r) =>
-        r.entry.id === entryId ? { ...r, entry: { ...r.entry, status } } : r,
+        r.entry.id === entryId
+          ? { ...r, entry: { ...r.entry, status } }
+          : r,
       ),
     );
     try {
       await patch<LibraryEntry>(`/library/${entryId}`, { status });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
-      void load();
+      void runSearch(query.trim(), statusFilter);
     }
   }
 
@@ -122,8 +174,6 @@ export function Library() {
    * Replace the cached `work` for every row whose edition references the
    * given work id. Called after the inline title-edit form on a row PATCHes
    * /works/{id} so the UI reflects the new title without a full reload.
-   * Useful in particular for AI-scanned entries where the extracted title
-   * is approximate and Janelle wants to clean it up after the fact.
    */
   function replaceWork(updated: Work) {
     setRows((prev) =>
@@ -133,34 +183,15 @@ export function Library() {
     );
   }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (filter !== "all" && r.entry.status !== filter) return false;
-      if (!q) return true;
-      const hay = [
-        r.work?.title,
-        r.work?.author,
-        r.work?.series,
-        r.edition?.edition_name,
-        r.edition?.publisher_or_shop,
-        r.edition?.retailer,
-        r.entry.notes,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [rows, filter, query]);
+  const showingEmptyState =
+    !loading && !error && rows.length === 0 && !hasSearched;
+  const showingNoResults =
+    !loading && !error && rows.length === 0 && hasSearched;
 
-  // Per-status counts. Zero-count statuses are hidden from the filter row.
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: rows.length };
-    for (const s of STATUS_OPTIONS) c[s] = 0;
-    for (const r of rows) c[r.entry.status] = (c[r.entry.status] ?? 0) + 1;
-    return c;
-  }, [rows]);
+  const statusLabel = useMemo(() => {
+    if (statusFilter === "all") return "all statuses";
+    return statusFilter.replace("_", " ");
+  }, [statusFilter]);
 
   return (
     <div>
@@ -174,57 +205,86 @@ export function Library() {
         </Link>
       </div>
 
-      {/* Status filter row. Zero-count statuses are hidden so the row stays
-          readable as Janelle's collection grows in only a few states. */}
-      <div className="flex flex-wrap items-center gap-2 mb-2">
-        <Chip
-          on={filter === "all"}
-          onClick={() => setFilter("all")}
-          label={`All (${counts.all})`}
-        />
-        {STATUS_OPTIONS.filter((s) => (counts[s] ?? 0) > 0).map((s) => (
-          <Chip
-            key={s}
-            on={filter === s}
-            onClick={() => setFilter(s)}
-            label={`${s.replace("_", " ")} (${counts[s] ?? 0})`}
-            chipClass={STATUS_CHIP[s]}
-          />
-        ))}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search title, author, shop…"
-          className="ml-auto border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm w-64"
+          placeholder="Search title, author, or series…"
+          className="flex-1 min-w-[200px] border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm"
+          autoFocus
         />
+        <select
+          value={statusFilter}
+          onChange={(e) =>
+            setStatusFilter(e.target.value as LibraryStatus | "all")
+          }
+          className="border border-zinc-700 bg-zinc-900 text-pink-100 px-2 py-1 text-sm"
+        >
+          <option value="all">All statuses</option>
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s.replace("_", " ")}
+            </option>
+          ))}
+        </select>
+        {(query || statusFilter !== "all") && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setStatusFilter("all");
+            }}
+            className="text-xs border border-zinc-700 text-pink-300 px-2 py-1 hover:bg-zinc-800"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
-      {loading && <p className="text-sm text-pink-400">Loading…</p>}
+      {loading && <p className="text-sm text-pink-400">Searching…</p>}
       {error && (
         <p className="text-sm text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
           {error}
         </p>
       )}
-      {!loading && !error && filtered.length === 0 && (
+
+      {showingEmptyState && (
+        <div className="text-sm text-pink-400 border border-zinc-800 bg-zinc-900/40 p-4">
+          <p className="mb-1 text-pink-200">Search your library</p>
+          <p className="text-xs text-pink-400">
+            Type a title, author, or series above — or pick a status to
+            browse. Your library isn't loaded into the browser, so it can
+            grow as large as you want without slowing this page down.
+          </p>
+        </div>
+      )}
+
+      {showingNoResults && (
         <p className="text-sm text-pink-400">
-          {rows.length === 0
-            ? "No editions yet. Click Add edition to capture your first."
-            : "Nothing matches that filter."}
+          No books match{" "}
+          {query ? <>“{query}”</> : <>that filter</>} in {statusLabel}.
         </p>
       )}
 
-      {filtered.length > 0 && (
-        <div className="card divide-y divide-zinc-800">
-          {filtered.map((row) => (
-            <LibraryRow
-              key={row.entry.id}
-              row={row}
-              onSetStatus={(s) => void setStatus(row.entry.id, s)}
-              onRemove={() => void removeEntry(row.entry.id)}
-              onWorkUpdated={replaceWork}
-            />
-          ))}
-        </div>
+      {rows.length > 0 && (
+        <>
+          <div className="text-xs text-pink-400 mb-1">
+            {truncated
+              ? `Showing first ${PAGE_LIMIT} matches — refine your search to narrow further.`
+              : `${rows.length} ${rows.length === 1 ? "result" : "results"}`}
+          </div>
+          <div className="card divide-y divide-zinc-800">
+            {rows.map((row) => (
+              <LibraryRow
+                key={row.entry.id}
+                row={row}
+                onSetStatus={(s) => void setStatus(row.entry.id, s)}
+                onRemove={() => void removeEntry(row.entry.id)}
+                onWorkUpdated={replaceWork}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -246,18 +306,12 @@ function LibraryRow({
 
   // Inline title edit. `editingTitle === null` means we're not editing;
   // a string means the input is open and holding the current draft.
-  // The AI scan path often produces approximate titles ("Fourth Wing
-  // Special Ed.") that Janelle wants to clean up after the fact, so the
-  // edit lives right next to the title in the expanded section.
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [savingTitle, setSavingTitle] = useState(false);
   const [titleError, setTitleError] = useState<string | null>(null);
 
   function confirmRemove() {
     const title = work?.title ?? "this book";
-    // window.confirm is intentional — the delete is destructive enough
-    // that a hard "are you sure" beats a tiny toast undo, and Janelle
-    // won't be doing this often.
     if (window.confirm(`Remove "${title}" from your library?`)) {
       onRemove();
     }
@@ -271,7 +325,6 @@ function LibraryRow({
       return;
     }
     if (next === work.title) {
-      // No-op — just close the editor.
       setEditingTitle(null);
       setTitleError(null);
       return;
@@ -291,9 +344,6 @@ function LibraryRow({
 
   return (
     <div className="hover:bg-zinc-800/40">
-      {/* Collapsed header — clickable area toggles open. The status select
-          and detail link sit outside the clickable region so they don't
-          accidentally toggle when used. */}
       <div className="px-3 py-2 flex items-start gap-3">
         <button
           type="button"
@@ -311,7 +361,6 @@ function LibraryRow({
             ▸
           </span>
           <div className="flex-1 min-w-0">
-            {/* Title — full, wrapping; never truncated. */}
             <div className="text-sm font-medium text-pink-200 break-words">
               {work?.title ?? "Unknown title"}
               {work?.series && (
@@ -352,11 +401,8 @@ function LibraryRow({
         </div>
       </div>
 
-      {/* Expanded details */}
       {open && (
         <div className="px-3 pb-3 pl-12 text-xs text-pink-200 space-y-1">
-          {/* Inline title editor — only shown when the row has an underlying
-              `work` row to PATCH against. AI-scanned entries always do. */}
           {work && (
             <div>
               {editingTitle === null ? (
@@ -481,33 +527,5 @@ function LibraryRow({
         </div>
       )}
     </div>
-  );
-}
-
-function Chip({
-  on,
-  onClick,
-  label,
-  chipClass,
-}: {
-  on: boolean;
-  onClick: () => void;
-  label: string;
-  chipClass?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        "text-xs px-2 py-0.5 border",
-        on
-          ? chipClass
-            ? `${chipClass} border-transparent`
-            : "border-pink-400 bg-pink-500 text-black"
-          : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
-      ].join(" ")}
-    >
-      {label}
-    </button>
   );
 }
