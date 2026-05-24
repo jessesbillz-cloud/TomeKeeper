@@ -206,11 +206,17 @@ export function Library() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
+        {/* iOS Safari auto-zooms into any focused input whose font-size
+            is below 16px and doesn't always restore the zoom level on
+            blur — leaving the page stuck at 1.1x and the user having
+            to pinch out. Bumping this single search input to text-base
+            (16px) prevents the zoom-in entirely. autoFocus is kept so
+            the keyboard still pops up on arrival. */}
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search title, author, or series…"
-          className="flex-1 min-w-[200px] border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm"
+          className="flex-1 min-w-[200px] border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-base"
           autoFocus
         />
         <select

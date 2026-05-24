@@ -98,9 +98,14 @@ function looksAllDay(s: FlashSale): boolean {
 }
 
 export function FlashSales() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialStarts = searchParams.get("starts") ?? "";
   const highlightId = searchParams.get("id");
+  // The floating bottom-right button (rendered by Layout) sets
+  // ?add=1 when tapped while we're already on this page. The effect
+  // below picks that up, opens the form, scrolls to top, and strips
+  // the param so a refresh doesn't keep re-opening the form.
+  const addRequested = searchParams.get("add") === "1";
 
   const [sales, setSales] = useState<FlashSale[]>([]);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -122,7 +127,9 @@ export function FlashSales() {
   // null = "Add new". string = "Edit existing row with this id" — adding/
   // editing share the same form so the same Save flow works for both.
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(Boolean(initialStarts));
+  const [adding, setAdding] = useState(
+    Boolean(initialStarts) || addRequested,
+  );
   const [saving, setSaving] = useState(false);
   const [showActiveOnly, setShowActiveOnly] = useState(false);
 
@@ -157,6 +164,31 @@ export function FlashSales() {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [highlightId, sales]);
+
+  // Respond to the floating button setting ?add=1 while we're already
+  // on this page (Layout pushes that param via navigate(..., {replace})
+  // without unmounting us, so the useState initializer above doesn't
+  // re-run). We open the form, scroll to top so the inputs are visible,
+  // and then strip the param so a refresh / back-nav doesn't re-trigger.
+  // We deliberately don't reset the form if the user is already in the
+  // middle of an edit — they'd lose unsaved input. They can hit Cancel
+  // in the sticky header to start fresh.
+  useEffect(() => {
+    if (!addRequested) return;
+    if (!adding) {
+      setAdding(true);
+      setEditingId(null);
+      setForm(EMPTY);
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const next = new URLSearchParams(searchParams);
+    next.delete("add");
+    setSearchParams(next, { replace: true });
+    // We intentionally exclude `adding` from the deps so a later
+    // `setAdding(true)` from the user's own actions doesn't re-trigger
+    // the scroll-to-top behavior — only an explicit ?add=1 should.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addRequested]);
 
   /**
    * Build the timestamps to POST/PATCH from the current form state. In
