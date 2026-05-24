@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { del, get, patch, post } from "../lib/api";
@@ -153,6 +153,42 @@ export function FlashSales() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showActiveOnly]);
+
+  // Derive the list that actually gets rendered:
+  //   1. Drop sales whose `ends_at` is already in the past — there's no
+  //      reason to clutter the list with closed sales, they're done.
+  //   2. Sort the survivors by `starts_at` ascending so the next sale
+  //      to open is on top and the list reads as a forward-looking
+  //      timeline. (The DB's default ordering wasn't doing this — we
+  //      were seeing May 8 → May 10 → May 14 → May 30 → May 1 → May 2
+  //      type jumbles.)
+  //   3. If we arrived with `?starts=YYYY-MM-DD` (i.e. the user tapped
+  //      a day on Home's calendar before hitting the floating + Sale
+  //      button), pin any sales active on that day to the top so the
+  //      user lands on the rows they were thinking about. Within the
+  //      pinned group and within the rest, ordering stays chronological.
+  const displaySales = useMemo(() => {
+    const now = Date.now();
+    const upcoming = sales.filter(
+      (s) => new Date(s.ends_at).getTime() >= now,
+    );
+    upcoming.sort(
+      (a, b) =>
+        new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
+    );
+    if (!initialStarts) return upcoming;
+    const onSelectedDay = (s: FlashSale) => {
+      const sd = localDay(s.starts_at);
+      const ed = localDay(s.ends_at);
+      // A sale "belongs to" the selected day if that day falls anywhere
+      // within its local-date range — covers both 1-day sales and multi-
+      // day sales the user clicked into the middle of.
+      return sd <= initialStarts && initialStarts <= ed;
+    };
+    const pinned = upcoming.filter(onSelectedDay);
+    const rest = upcoming.filter((s) => !onSelectedDay(s));
+    return [...pinned, ...rest];
+  }, [sales, initialStarts]);
 
   // After data loads, if we arrived with ?id=<flash_sale_id> (e.g. by
   // tapping the flash-sale event on the home calendar), scroll that row
@@ -529,15 +565,17 @@ export function FlashSales() {
 
       {loading && <p className="text-sm text-pink-400">Loading…</p>}
 
-      {!loading && sales.length === 0 && !adding && (
+      {!loading && displaySales.length === 0 && !adding && (
         <p className="text-sm text-pink-400">
-          No flash sales logged yet. Click Add flash sale above.
+          {sales.length === 0
+            ? "No flash sales logged yet. Click Add flash sale above."
+            : "No upcoming flash sales. Past sales are hidden."}
         </p>
       )}
 
-      {sales.length > 0 && (
+      {displaySales.length > 0 && (
         <div className="card divide-y divide-zinc-800">
-          {sales.map((s) => (
+          {displaySales.map((s) => (
             <div
               key={s.id}
               ref={(el) => {
