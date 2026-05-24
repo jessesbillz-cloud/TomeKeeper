@@ -416,13 +416,14 @@ export function Home() {
           here, into the spot the old subscribe banner occupied, so the
           most-used actions sit above the grid art. They still operate
           on whatever day is currently selected via `selectedKey`. */}
+      {/* The "+ Flash sale" pink button used to live here too. Its
+          function (open the FlashSales add-form) has been moved onto
+          the global floating bottom-right button so the same action
+          is one thumb-tap from any screen — not just the calendar.
+          Day-context still lives on for the publisher-sale, AI
+          screenshot, and QR/ISBN scan quick-adds below, which all
+          benefit from being tied to `selectedKey`. */}
       <div className="flex flex-wrap gap-2 mb-3">
-        <Link
-          to={`/flash-sales?starts=${selectedKey}`}
-          className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-        >
-          + Flash sale
-        </Link>
         <Link
           to={`/publisher-sales-events?starts=${selectedKey}`}
           className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"

@@ -11,12 +11,16 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  // When we're already on the flash-sales page, the floating button
-  // shouldn't waste the tap on a self-navigation — it should be the
-  // "add flash sale" trigger so the user doesn't have to scroll to
-  // the top of the page to find it. We signal that by pushing a
-  // ?add=1 search param onto the current URL; FlashSales.tsx watches
-  // for that and opens its form + scrolls to top.
+  // The floating button (rendered below) has absorbed the function
+  // of the dashboard's old inline "+ Flash sale" pink button: a
+  // single tap from any screen lands on /flash-sales with the
+  // add-form already open and scrolled to. We signal "open the
+  // form" by pushing a ?add=1 search param; FlashSales.tsx watches
+  // for that param and handles both the form-open and the scroll.
+  // When we're already on /flash-sales we use replace: true so the
+  // back button doesn't get cluttered with intermediate ?add=1
+  // entries — push otherwise so the back button returns to the
+  // page the user came from.
   const onFlashSales = location.pathname === "/flash-sales";
   return (
     <div className="min-h-screen flex flex-col bg-black">
@@ -55,36 +59,22 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Global floating button. Context-aware:
-            - on /flash-sales it's "➕ Add" and pushes ?add=1 so the
-              FlashSales page opens its add-form and scrolls to top
-              (saves the user a trip to the top "+ Add flash sale"
-              button in the sticky header);
-            - on every other page it's "⚡ Sale" and jumps to the
-              flash sales list. */}
+      {/* Global floating "+ Sale" button — sits in the old
+          "✨ Assistant" surface spot. Tap from any page to open
+          the FlashSales add-form (the page picks ?add=1 up and
+          scrolls itself to the top). The flash-sales LIST is still
+          reachable from the "Flash sales" top-nav link. */}
       <button
         type="button"
-        onClick={() => {
-          if (onFlashSales) {
-            // Same path + new param keeps the FlashSales page
-            // mounted; the effect there picks up ?add=1 and opens
-            // the form. replace: true so back-button behaviour
-            // isn't littered with intermediate ?add=1 entries.
-            navigate("/flash-sales?add=1", { replace: true });
-          } else {
-            navigate("/flash-sales");
-          }
-        }}
-        aria-label={onFlashSales ? "Add flash sale" : "Open Flash sales"}
+        onClick={() =>
+          navigate("/flash-sales?add=1", { replace: onFlashSales })
+        }
+        aria-label="Add flash sale"
         className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-pink-500 text-black shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 flex flex-col items-center justify-center leading-none"
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       >
-        <span className="text-xl" aria-hidden>
-          {onFlashSales ? "➕" : "⚡"}
-        </span>
-        <span className="text-[10px] font-semibold mt-0.5">
-          {onFlashSales ? "Add" : "Sale"}
-        </span>
+        <span className="text-xl" aria-hidden>➕</span>
+        <span className="text-[10px] font-semibold mt-0.5">Sale</span>
       </button>
     </div>
   );
