@@ -6,6 +6,7 @@ import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
 import { get } from "../lib/api";
 import { lookupIsbn } from "../lib/isbnLookup";
+import { useSelectedDay } from "../lib/selectedDayContext";
 import type { CalendarEvent } from "../lib/types";
 
 /**
@@ -265,6 +266,20 @@ export function Home() {
       block: "start",
     });
   }, [selectedDate]);
+
+  // Mirror the calendar's selected day up into shared layout state so
+  // the global floating "+ Sale" button (rendered by Layout) can
+  // forward it on to /flash-sales as ?starts=YYYY-MM-DD — preserving
+  // the date-prefill behavior the old inline "+ Flash sale" Link on
+  // this dashboard used to provide. Cleared on unmount so other pages
+  // don't carry stale day-context: from Library/Assistant/etc. the
+  // floating button should open the form with today's defaults, not
+  // whatever day was last selected here.
+  const { setSelectedDay } = useSelectedDay();
+  useEffect(() => {
+    setSelectedDay(isoDate(selectedDate));
+    return () => setSelectedDay(null);
+  }, [selectedDate, setSelectedDay]);
 
   const grid = useMemo(() => buildGrid(currentMonth), [currentMonth]);
   const monthLabel = currentMonth.toLocaleDateString(undefined, {

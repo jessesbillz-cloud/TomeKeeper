@@ -173,12 +173,29 @@ export function FlashSales() {
   // We deliberately don't reset the form if the user is already in the
   // middle of an edit — they'd lose unsaved input. They can hit Cancel
   // in the sticky header to start fresh.
+  //
+  // When Layout includes a `?starts=YYYY-MM-DD` alongside `?add=1` (i.e.
+  // the user had a day selected on Home's calendar when they tapped the
+  // floating button), we mirror the useState initializer's prefill so the
+  // form opens as an all-day sale on that day — restoring the auto-
+  // populate-date behavior the old inline "+ Flash sale" Link had.
   useEffect(() => {
     if (!addRequested) return;
     if (!adding) {
       setAdding(true);
       setEditingId(null);
-      setForm(EMPTY);
+      const starts = searchParams.get("starts") ?? "";
+      setForm(
+        starts
+          ? {
+              ...EMPTY,
+              all_day: true,
+              day: starts,
+              starts_at: `${starts}T12:00`,
+              ends_at: `${starts}T20:00`,
+            }
+          : EMPTY,
+      );
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
     const next = new URLSearchParams(searchParams);

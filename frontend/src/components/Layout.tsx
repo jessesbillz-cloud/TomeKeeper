@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { SelectedDayContext } from "../lib/selectedDayContext";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   [
@@ -11,6 +13,13 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  // Shared "what day did the user tap on Home's calendar" state.
+  // Home pushes its selected ISO day here via SelectedDayContext so
+  // the floating "+ Sale" button below can forward it on to
+  // /flash-sales as ?starts=YYYY-MM-DD — preserving the auto-
+  // prefill-the-date behavior the old inline "+ Flash sale" link
+  // on the dashboard used to have.
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   // The floating button (rendered below) has absorbed the function
   // of the dashboard's old inline "+ Flash sale" pink button: a
   // single tap from any screen lands on /flash-sales with the
@@ -56,19 +65,30 @@ export function Layout() {
       </header>
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4">
-        <Outlet />
+        <SelectedDayContext.Provider value={{ selectedDay, setSelectedDay }}>
+          <Outlet />
+        </SelectedDayContext.Provider>
       </main>
 
       {/* Global floating "+ Sale" button — sits in the old
           "✨ Assistant" surface spot. Tap from any page to open
           the FlashSales add-form (the page picks ?add=1 up and
           scrolls itself to the top). The flash-sales LIST is still
-          reachable from the "Flash sales" top-nav link. */}
+          reachable from the "Flash sales" top-nav link.
+
+          If Home has pushed a selectedDay into context (i.e. the
+          user tapped a day on the calendar before hitting Sale),
+          we forward it as ?starts=YYYY-MM-DD so FlashSales can
+          prefill the add-form's date — exactly the way the old
+          inline "+ Flash sale" Link on the dashboard did. */}
       <button
         type="button"
-        onClick={() =>
-          navigate("/flash-sales?add=1", { replace: onFlashSales })
-        }
+        onClick={() => {
+          const url = selectedDay
+            ? `/flash-sales?starts=${selectedDay}&add=1`
+            : "/flash-sales?add=1";
+          navigate(url, { replace: onFlashSales });
+        }}
         aria-label="Add flash sale"
         className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-pink-500 text-black shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 flex flex-col items-center justify-center leading-none"
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
