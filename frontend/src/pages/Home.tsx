@@ -416,13 +416,13 @@ export function Home() {
           here, into the spot the old subscribe banner occupied, so the
           most-used actions sit above the grid art. They still operate
           on whatever day is currently selected via `selectedKey`. */}
+      {/* Quick-add actions for the selected day. The pink "+ Flash sale"
+          button used to live here as well, but it was redundant with the
+          header "Flash sales" link and the bottom-right ⚡ floating
+          shortcut, so it has been removed to streamline the home
+          screen. Use those two entry points (or the floating button) to
+          jump into the flash-sale flow. */}
       <div className="flex flex-wrap gap-2 mb-3">
-        <Link
-          to={`/flash-sales?starts=${selectedKey}`}
-          className="bg-pink-500 text-black px-3 py-1 text-sm hover:bg-pink-400"
-        >
-          + Flash sale
-        </Link>
         <Link
           to={`/publisher-sales-events?starts=${selectedKey}`}
           className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"

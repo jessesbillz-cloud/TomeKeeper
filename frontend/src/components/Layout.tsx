@@ -47,19 +47,18 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Global floating "✨ Assistant" button — replaces the old "📷"
-          photo button. Tap to open the universal entry point that
-          accepts text + screenshots + cover photos. The Capture form is
-          still reachable from the nav for manual entry; the assistant
-          handles every other flow. */}
+      {/* Global floating "⚡ Flash sale" button — replaces the old
+          "✨ Assistant" button. Tap to jump straight to the flash sales
+          page. The Assistant is still reachable from the top nav. */}
       <button
         type="button"
-        onClick={() => navigate("/assistant")}
-        aria-label="Open Book Assistant"
-        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-pink-500 text-black text-2xl shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 flex items-center justify-center"
+        onClick={() => navigate("/flash-sales")}
+        aria-label="Open Flash sales"
+        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-pink-500 text-black shadow-[0_4px_20px_rgba(236,72,153,0.6)] hover:bg-pink-400 flex flex-col items-center justify-center leading-none"
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       >
-        ✨
+        <span className="text-xl" aria-hidden>⚡</span>
+        <span className="text-[10px] font-semibold mt-0.5">Sale</span>
       </button>
     </div>
   );
