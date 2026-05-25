@@ -160,6 +160,12 @@ export interface CalendarEvent {
   ends_at?: ISODateTime | null;
   url?: string | null;
   notes?: string | null;
+  /** Outcome marker for `flash_sale` events — mirrors `flash_sales.status`.
+   *  Lets the Home day-detail row render the three Purchased / No buy /
+   *  Pre-order chips with the correct chip pre-selected. Null on every
+   *  non-flash event type (and on flash sales the user hasn't decided
+   *  on yet). */
+  status?: FlashSaleStatus | null;
   edition_id: UUID | null;
   library_entry_id: UUID | null;
   order_id: UUID | null;

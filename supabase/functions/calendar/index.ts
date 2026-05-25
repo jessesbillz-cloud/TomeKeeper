@@ -18,6 +18,11 @@ interface CalendarEvent {
   ends_at?: string | null;
   url?: string | null;
   notes?: string | null;
+  /** Outcome marker — flash sale events only. One of `purchased`,
+   *  `no_buy`, `preorder`, or null when not yet decided. The Home
+   *  day-detail panel renders three click-chips bound to this value so
+   *  Janelle can mark the outcome without leaving the calendar. */
+  status?: string | null;
   edition_id?: string | null;
   library_entry_id?: string | null;
   order_id?: string | null;
@@ -135,7 +140,9 @@ Deno.serve(async (req: Request) => {
       // 3. Flash sales overlapping the window
       supabase
         .from("flash_sales")
-        .select("id, shop, title, url, starts_at, ends_at, notes, edition_id")
+        .select(
+          "id, shop, title, url, starts_at, ends_at, notes, status, edition_id",
+        )
         .lte("starts_at", endDt)
         .gte("ends_at", startDt),
 
@@ -257,11 +264,14 @@ Deno.serve(async (req: Request) => {
         at: day === sDate ? sAt : null,
         // Carry the full window + url + notes through so the day-detail
         // panel can render the exact same row the FlashSales list page
-        // shows (title / shop / start → end / link / notes).
+        // shows (title / shop / start → end / link / notes). Also carry
+        // `status` so the inline outcome chips below the row reflect
+        // the current value and tap-to-toggle stays in sync.
         starts_at: sAt,
         ends_at: eAt,
         url: (r.url as string) || null,
         notes: (r.notes as string) || null,
+        status: (r.status as string) || null,
         edition_id: (r.edition_id as string) || null,
         flash_sale_id: r.id as string,
       });

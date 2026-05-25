@@ -4,10 +4,10 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
-import { get } from "../lib/api";
+import { get, patch } from "../lib/api";
 import { lookupIsbn } from "../lib/isbnLookup";
 import { useSelectedDay } from "../lib/selectedDayContext";
-import type { CalendarEvent } from "../lib/types";
+import type { CalendarEvent, FlashSale, FlashSaleStatus } from "../lib/types";
 
 /**
  * Pull a likely ISBN out of a scanned QR/barcode payload.
@@ -118,6 +118,22 @@ function fromISOLocal(iso: string): string {
 }
 
 /**
+ * The three click-box options for marking a flash-sale outcome. Rendered
+ * inline on every `flash_sale` day-detail row so Janelle can decide right
+ * from the calendar without bouncing to /flash-sales. `value` is what
+ * lands in `flash_sales.status` (and what the DB CHECK constraint
+ * enforces); `label` is what she sees.
+ */
+const STATUS_OPTIONS: ReadonlyArray<{
+  value: FlashSaleStatus;
+  label: string;
+}> = [
+  { value: "purchased", label: "Purchased" },
+  { value: "no_buy", label: "No buy" },
+  { value: "preorder", label: "Pre-order" },
+];
+
+/**
  * Where should tapping a calendar event take the user?
  *  - releases / preorders / ships / deliveries → the edition detail page,
  *    which is the canonical place to view + edit a book and its order.
@@ -178,6 +194,37 @@ export function Home() {
     next.delete("added");
     next.delete("addedErrors");
     setSearchParams(next, { replace: true });
+  }
+
+  /**
+   * Set the status of a flash sale from the inline chip strip on a
+   * day-detail row. Optimistically flips the chip in local state, then
+   * PATCHes `/flash-sales/:id`. If the request fails we roll the chip
+   * back and surface an error in the day-detail panel — same error slot
+   * the calendar-load uses so Janelle sees it without scrolling.
+   *
+   * Passing the chip's current value as `next` (when she taps the
+   * already-active chip) clears the field back to null, matching the
+   * "tap-active-to-clear" behavior the previous FlashSales form had.
+   */
+  async function setFlashSaleStatus(
+    flashSaleId: string,
+    next: FlashSaleStatus | null,
+  ) {
+    const previous = events;
+    setEvents((prev) =>
+      prev.map((ev) =>
+        ev.type === "flash_sale" && ev.flash_sale_id === flashSaleId
+          ? { ...ev, status: next }
+          : ev,
+      ),
+    );
+    try {
+      await patch<FlashSale>(`/flash-sales/${flashSaleId}`, { status: next });
+    } catch (e: unknown) {
+      setEvents(previous);
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   useEffect(() => {
@@ -684,6 +731,44 @@ export function Home() {
                       {ev.notes && (
                         <div className="text-xs text-pink-500 truncate">
                           {ev.notes}
+                        </div>
+                      )}
+                      {/* Inline outcome chips on flash_sale rows so
+                          Janelle can mark Purchased / No buy / Pre-order
+                          right from the calendar without bouncing to the
+                          FlashSales tab. Tapping the active chip again
+                          clears it back to "not yet decided". Chip
+                          clicks stopPropagation so they don't trigger
+                          the row's navigate-to-FlashSales behavior. We
+                          only render for `flash_sale` rows that carry a
+                          `flash_sale_id`; without an id we can't PATCH. */}
+                      {ev.type === "flash_sale" && ev.flash_sale_id && (
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {STATUS_OPTIONS.map((opt) => {
+                            const active = ev.status === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void setFlashSaleStatus(
+                                    ev.flash_sale_id!,
+                                    active ? null : opt.value,
+                                  );
+                                }}
+                                aria-pressed={active}
+                                className={[
+                                  "px-2 py-0.5 text-xs border",
+                                  active
+                                    ? "bg-pink-500 text-black border-pink-400"
+                                    : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                                ].join(" ")}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
