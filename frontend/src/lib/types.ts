@@ -84,6 +84,13 @@ export interface Order {
   updated_at: ISODateTime;
 }
 
+/**
+ * Outcome marker for a flash sale, set by tapping one of the three
+ * status chips on the edit form. `null` = not yet decided. The values
+ * match the CHECK constraint on `flash_sales.status` in Postgres.
+ */
+export type FlashSaleStatus = "purchased" | "no_buy" | "preorder";
+
 export interface FlashSale {
   id: UUID;
   user_id: UUID;
@@ -94,6 +101,7 @@ export interface FlashSale {
   starts_at: ISODateTime;
   ends_at: ISODateTime;
   notes: string | null;
+  status: FlashSaleStatus | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }

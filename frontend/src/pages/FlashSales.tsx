@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { del, get, patch, post } from "../lib/api";
-import type { FlashSale } from "../lib/types";
+import type { FlashSale, FlashSaleStatus } from "../lib/types";
 
 type Form = {
   shop: string;
@@ -20,6 +20,10 @@ type Form = {
    *  time and the UTC date rolled over. */
   all_day: boolean;
   notes: string;
+  /** Outcome marker — null = not yet decided. Set by tapping one of the
+   *  three status chips in the form. Stored as `flash_sales.status` and
+   *  shown back as a small badge on the list rows. */
+  status: FlashSaleStatus | null;
 };
 
 const EMPTY: Form = {
@@ -31,7 +35,30 @@ const EMPTY: Form = {
   day: "",
   all_day: false,
   notes: "",
+  status: null,
 };
+
+/**
+ * The three click-box options Janelle picks from when she marks the
+ * outcome of a sale. Labels are what she sees; values are what land in
+ * the DB (and what the CHECK constraint enforces). The pink palette
+ * matches the rest of the app — selected chip flips to the filled pink
+ * variant, unselected stays in the dark outline style.
+ */
+const STATUS_OPTIONS: ReadonlyArray<{
+  value: FlashSaleStatus;
+  label: string;
+}> = [
+  { value: "purchased", label: "Purchased" },
+  { value: "no_buy", label: "No buy" },
+  { value: "preorder", label: "Pre-order" },
+];
+
+/** Display label for the status badge on a list row. */
+function statusLabel(s: FlashSaleStatus | null): string | null {
+  if (!s) return null;
+  return STATUS_OPTIONS.find((o) => o.value === s)?.label ?? null;
+}
 
 const INPUT_DARK =
   "w-full border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1";
@@ -303,6 +330,7 @@ export function FlashSales() {
         starts_at: ts.startsISO,
         ends_at: ts.endsISO,
         notes: form.notes.trim() || null,
+        status: form.status,
       };
       if (editingId) {
         const updated = await patch<FlashSale>(
@@ -342,6 +370,7 @@ export function FlashSales() {
       day: allDay ? localDay(s.starts_at) : "",
       all_day: allDay,
       notes: s.notes ?? "",
+      status: s.status ?? null,
     });
     setEditingId(s.id);
     setAdding(true);
@@ -543,6 +572,39 @@ export function FlashSales() {
               className={INPUT_DARK}
             />
           </label>
+          {/* Status chips — three click-boxes for Janelle to mark the
+              outcome of this sale. Tapping the active chip again clears
+              it back to "not yet decided" so the field is fully
+              reversible without a separate Clear button. */}
+          <div className="col-span-2">
+            <span className="block text-xs text-pink-400">Status</span>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {STATUS_OPTIONS.map((opt) => {
+                const active = form.status === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        status: active ? null : opt.value,
+                      })
+                    }
+                    aria-pressed={active}
+                    className={[
+                      "px-3 py-1 text-sm border",
+                      active
+                        ? "bg-pink-500 text-black border-pink-400"
+                        : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                    ].join(" ")}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label className="block col-span-2">
             <span className="block text-xs text-pink-400">Notes</span>
             <textarea
@@ -598,6 +660,16 @@ export function FlashSales() {
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-pink-200">{s.title ?? s.shop}</div>
+                {/* Status badge — shows the outcome chip Janelle picked
+                    in the edit form. Hidden when status is null so
+                    undecided sales don't carry an empty pill. */}
+                {statusLabel(s.status) && (
+                  <div className="mt-0.5">
+                    <span className="inline-block text-[10px] px-1.5 py-0.5 bg-pink-900/60 text-pink-200 border border-pink-700">
+                      {statusLabel(s.status)}
+                    </span>
+                  </div>
+                )}
                 {/* Stacked meta — shop, time range, link each on their
                     own line. Matches the calendar day-detail row exactly
                     so the two surfaces read identically regardless of
