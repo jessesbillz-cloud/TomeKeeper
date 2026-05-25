@@ -157,6 +157,12 @@ export function FlashSales() {
   // Derive the list that actually gets rendered:
   //   1. Drop sales whose `ends_at` is already in the past — there's no
   //      reason to clutter the list with closed sales, they're done.
+  //      EXCEPTION: when we were deep-linked via `?id=<flash_sale_id>`
+  //      (e.g. the user tapped a past flash-sale event on Home's
+  //      calendar), keep that specific row visible even when past so
+  //      the user can still view, edit, or delete it. Without this
+  //      escape hatch, tapping a closed sale on the calendar would
+  //      land on a list that didn't contain the row they came to find.
   //   2. Sort the survivors by `starts_at` ascending so the next sale
   //      to open is on top and the list reads as a forward-looking
   //      timeline. (The DB's default ordering wasn't doing this — we
@@ -170,7 +176,8 @@ export function FlashSales() {
   const displaySales = useMemo(() => {
     const now = Date.now();
     const upcoming = sales.filter(
-      (s) => new Date(s.ends_at).getTime() >= now,
+      (s) =>
+        new Date(s.ends_at).getTime() >= now || s.id === highlightId,
     );
     upcoming.sort(
       (a, b) =>
@@ -188,7 +195,7 @@ export function FlashSales() {
     const pinned = upcoming.filter(onSelectedDay);
     const rest = upcoming.filter((s) => !onSelectedDay(s));
     return [...pinned, ...rest];
-  }, [sales, initialStarts]);
+  }, [sales, initialStarts, highlightId]);
 
   // After data loads, if we arrived with ?id=<flash_sale_id> (e.g. by
   // tapping the flash-sale event on the home calendar), scroll that row
