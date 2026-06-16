@@ -6,9 +6,20 @@ import { useAuth } from "../lib/auth";
 const INPUT =
   "w-full border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1.5 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1";
 
+// Where the magic link should send the user back to. Resolves to the deployed
+// origin + Vite base (e.g. https://jessesbillz-cloud.github.io/TomeKeeper/),
+// or the dev server when running locally. The Supabase client is configured
+// with detectSessionInUrl, so it picks the session up from the redirect.
+const REDIRECT_TO =
+  typeof window !== "undefined"
+    ? window.location.origin + import.meta.env.BASE_URL
+    : undefined;
+
+type Mode = "link" | "password";
+
 export function Login() {
   const { signIn } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<Mode>("link");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,18 +32,18 @@ export function Login() {
     setInfo(null);
     setSubmitting(true);
     try {
-      if (mode === "signin") {
-        await signIn(email, password);
-      } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+      if (mode === "link") {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: REDIRECT_TO },
+        });
         if (error) throw error;
-        if (data.session) {
-          // Auto-confirmed: AuthProvider's onAuthStateChange will pick it up.
-        } else {
-          setInfo(
-            "Check your email for a confirmation link, then come back and sign in.",
-          );
-        }
+        setInfo(
+          "Check your email for a sign-in link. Open it on this device and you'll be signed in automatically.",
+        );
+      } else {
+        await signIn(email, password);
+        // On success, AuthProvider's onAuthStateChange swaps in the app.
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -51,7 +62,9 @@ export function Login() {
           TomeKeeper
         </h1>
         <p className="text-xs text-pink-500 text-center mb-5">
-          {mode === "signin" ? "Sign in to continue" : "Create your account"}
+          {mode === "link"
+            ? "Enter your email and we'll send you a sign-in link"
+            : "Sign in with your password"}
         </p>
 
         <label className="block text-xs text-pink-300 mb-1" htmlFor="email">
@@ -64,24 +77,29 @@ export function Login() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
-          className={`${INPUT} mb-3`}
+          className={`${INPUT} ${mode === "link" ? "mb-4" : "mb-3"}`}
         />
 
-        <label className="block text-xs text-pink-300 mb-1" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={6}
-          autoComplete={
-            mode === "signin" ? "current-password" : "new-password"
-          }
-          className={`${INPUT} mb-4`}
-        />
+        {mode === "password" && (
+          <>
+            <label
+              className="block text-xs text-pink-300 mb-1"
+              htmlFor="password"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="current-password"
+              className={`${INPUT} mb-4`}
+            />
+          </>
+        )}
 
         {error && (
           <div className="text-xs text-red-300 mb-3 border border-red-800 bg-red-950/40 p-2">
@@ -100,26 +118,26 @@ export function Login() {
           className="w-full bg-pink-500 text-black py-1.5 text-sm font-medium hover:bg-pink-400 disabled:opacity-50"
         >
           {submitting
-            ? mode === "signin"
-              ? "Signing in…"
-              : "Creating account…"
-            : mode === "signin"
-              ? "Sign in"
-              : "Create account"}
+            ? mode === "link"
+              ? "Sending link…"
+              : "Signing in…"
+            : mode === "link"
+              ? "Email me a sign-in link"
+              : "Sign in"}
         </button>
 
         <button
           type="button"
           onClick={() => {
-            setMode((m) => (m === "signin" ? "signup" : "signin"));
+            setMode((m) => (m === "link" ? "password" : "link"));
             setError(null);
             setInfo(null);
           }}
           className="w-full mt-3 text-xs text-pink-400 hover:text-pink-200 underline"
         >
-          {mode === "signin"
-            ? "Need an account? Create one"
-            : "Already have an account? Sign in"}
+          {mode === "link"
+            ? "Prefer a password? Sign in with password"
+            : "Email me a sign-in link instead"}
         </button>
       </form>
     </div>

@@ -1,20 +1,21 @@
 import { type ReactNode } from "react";
 
 import { useAuth } from "../lib/auth";
+import { Login } from "./Login";
 
 /**
- * Pass-through gate. We DO NOT show a Login page here — this is a personal
- * app for one household and the session is persisted in localStorage by
- * supabase-js. If the session ever lapses, individual API calls will fail
- * with a clean 401 error banner; the user is never bounced to a sign-in
- * screen they didn't ask for.
+ * Auth gate.
  *
- * We still wait for the auth state to finish loading so pages don't fire
- * API calls with a `null` session and trip the "Not signed in" path
- * unnecessarily on first paint.
+ * While the session is loading we show a splash so pages don't fire API calls
+ * with a `null` session and trip the "Not signed in" path on first paint.
+ *
+ * When there is NO active session we render the <Login> screen instead of the
+ * app. This is the recovery path: if the persisted session ever lapses (token
+ * expiry, a revoked session, cleared PWA storage, etc.) the user gets a real
+ * sign-in screen rather than a silently broken app with no way back in.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { loading } = useAuth();
+  const { loading, session } = useAuth();
 
   if (loading) {
     return (
@@ -22,6 +23,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         Loading…
       </div>
     );
+  }
+
+  if (!session) {
+    return <Login />;
   }
 
   return <>{children}</>;
