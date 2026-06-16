@@ -2,7 +2,22 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { del, get, patch, post } from "../lib/api";
-import type { FlashSale } from "../lib/types";
+import type { FlashSale, FlashSaleStatus } from "../lib/types";
+
+/**
+ * The same outcome chips Janelle gets on the calendar day-detail rows, so she
+ * can mark a sale Purchased / No buy / Pre-order right here on the FlashSales
+ * screen too. `value` lands in `flash_sales.status` (enforced by the DB CHECK
+ * constraint); `label` is what she sees. Tapping the active chip clears it.
+ */
+const STATUS_OPTIONS: ReadonlyArray<{
+  value: FlashSaleStatus;
+  label: string;
+}> = [
+  { value: "purchased", label: "Purchased" },
+  { value: "no_buy", label: "No buy" },
+  { value: "preorder", label: "Pre-order" },
+];
 
 type Form = {
   shop: string;
@@ -351,6 +366,28 @@ export function FlashSales() {
     );
   }
 
+  /**
+   * Mark a sale's outcome (Purchased / No buy / Pre-order) straight from the
+   * list. Optimistic: flip local state first, PATCH, and roll back on error.
+   * Passing the chip's current value clears it back to null (tap-to-clear),
+   * matching the calendar day-detail chips exactly.
+   */
+  async function setStatus(id: string, next: FlashSaleStatus | null) {
+    const prev = sales;
+    setSales((rows) =>
+      rows.map((s) => (s.id === id ? { ...s, status: next } : s)),
+    );
+    try {
+      const updated = await patch<FlashSale>(`/flash-sales/${id}`, {
+        status: next,
+      });
+      setSales((rows) => rows.map((s) => (s.id === id ? updated : s)));
+    } catch (e: unknown) {
+      setSales(prev);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function remove(id: string) {
     const prev = sales;
     setSales(prev.filter((s) => s.id !== id));
@@ -624,6 +661,33 @@ export function FlashSales() {
                     {s.notes}
                   </div>
                 )}
+                {/* Outcome chips — same Purchased / No buy / Pre-order
+                    controls as the calendar day-detail rows, so Janelle can
+                    mark a buy/pre-order right here without bouncing back to
+                    the calendar. Tapping the active chip clears it. */}
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {STATUS_OPTIONS.map((opt) => {
+                    const active = s.status === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          void setStatus(s.id, active ? null : opt.value)
+                        }
+                        aria-pressed={active}
+                        className={[
+                          "px-2 py-0.5 text-xs border",
+                          active
+                            ? "bg-pink-500 text-black border-pink-400"
+                            : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                        ].join(" ")}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button
