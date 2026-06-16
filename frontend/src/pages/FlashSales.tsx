@@ -35,6 +35,8 @@ type Form = {
    *  time and the UTC date rolled over. */
   all_day: boolean;
   notes: string;
+  /** Outcome marker — Purchased / No buy / Pre-order, or null for undecided. */
+  status: FlashSaleStatus | null;
 };
 
 const EMPTY: Form = {
@@ -46,6 +48,7 @@ const EMPTY: Form = {
   day: "",
   all_day: false,
   notes: "",
+  status: null,
 };
 
 const INPUT_DARK =
@@ -318,6 +321,7 @@ export function FlashSales() {
         starts_at: ts.startsISO,
         ends_at: ts.endsISO,
         notes: form.notes.trim() || null,
+        status: form.status,
       };
       if (editingId) {
         const updated = await patch<FlashSale>(
@@ -357,6 +361,7 @@ export function FlashSales() {
       day: allDay ? localDay(s.starts_at) : "",
       all_day: allDay,
       notes: s.notes ?? "",
+      status: s.status ?? null,
     });
     setEditingId(s.id);
     setAdding(true);
@@ -448,30 +453,32 @@ export function FlashSales() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-3">
-        <button
-          onClick={() => setShowActiveOnly(false)}
-          className={[
-            "text-xs px-2 py-0.5 border",
-            !showActiveOnly
-              ? "border-pink-400 bg-pink-500 text-black"
-              : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
-          ].join(" ")}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setShowActiveOnly(true)}
-          className={[
-            "text-xs px-2 py-0.5 border",
-            showActiveOnly
-              ? "border-pink-400 bg-pink-500 text-black"
-              : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
-          ].join(" ")}
-        >
-          Active now
-        </button>
-      </div>
+      {!adding && (
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => setShowActiveOnly(false)}
+            className={[
+              "text-xs px-2 py-0.5 border",
+              !showActiveOnly
+                ? "border-pink-400 bg-pink-500 text-black"
+                : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+            ].join(" ")}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setShowActiveOnly(true)}
+            className={[
+              "text-xs px-2 py-0.5 border",
+              showActiveOnly
+                ? "border-pink-400 bg-pink-500 text-black"
+                : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+            ].join(" ")}
+          >
+            Active now
+          </button>
+        </div>
+      )}
 
       {adding && (
         <form
@@ -589,6 +596,38 @@ export function FlashSales() {
               className={INPUT_DARK}
             />
           </label>
+          {/* The same Purchased / No buy / Pre-order buttons as the main
+              dashboard, right here on the entry screen. Tapping the active
+              one clears it back to undecided. */}
+          <div className="col-span-2">
+            <span className="block text-xs text-pink-400 mb-1">Mark</span>
+            <div className="flex flex-wrap gap-1.5">
+              {STATUS_OPTIONS.map((opt) => {
+                const active = form.status === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        status: active ? null : opt.value,
+                      })
+                    }
+                    aria-pressed={active}
+                    className={[
+                      "px-2 py-0.5 text-xs border",
+                      active
+                        ? "bg-pink-500 text-black border-pink-400"
+                        : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                    ].join(" ")}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="col-span-2 flex gap-2">
             <button
               type="submit"
@@ -617,7 +656,7 @@ export function FlashSales() {
         </p>
       )}
 
-      {displaySales.length > 0 && (
+      {!adding && displaySales.length > 0 && (
         <div className="card divide-y divide-zinc-800">
           {displaySales.map((s) => (
             <div
