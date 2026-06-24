@@ -579,15 +579,6 @@ export function FlashSales() {
             </>
           )}
           <label className="block col-span-2">
-            <span className="block text-xs text-pink-400">URL</span>
-            <input
-              value={form.url}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-              placeholder="https://…"
-              className={INPUT_DARK}
-            />
-          </label>
-          <label className="block col-span-2">
             <span className="block text-xs text-pink-400">Notes</span>
             <textarea
               value={form.notes}
