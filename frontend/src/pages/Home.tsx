@@ -670,6 +670,16 @@ export function Home() {
             void ensureSalesLoaded();
             setSearchQuery(e.target.value);
           }}
+          enterKeyHint="search"
+          onKeyDown={(e) => {
+            // Results filter live, so the Android keyboard's Search/enter
+            // key has nothing to submit — pressing it just blurs the field
+            // so the on-screen keyboard drops away without a Back tap.
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
           placeholder="🔍 Search sales…"
           aria-label="Search flash sales by shop or title"
           className="w-44 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
@@ -800,23 +810,6 @@ export function Home() {
                           )}
                         </div>
                         <div className="text-xs text-pink-400">{s.shop}</div>
-                        <div className="text-xs text-pink-400">
-                          {fromISOLocal(s.starts_at)} →{" "}
-                          {fromISOLocal(s.ends_at)}
-                        </div>
-                        {s.url && (
-                          <div className="text-xs">
-                            <a
-                              href={s.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-pink-300 underline"
-                            >
-                              link
-                            </a>
-                          </div>
-                        )}
                         {s.notes && (
                           <div className="text-xs text-pink-500 truncate">
                             {s.notes}
