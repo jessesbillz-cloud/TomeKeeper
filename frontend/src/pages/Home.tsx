@@ -180,6 +180,85 @@ export function Home() {
   // null = "show all shops". Non-null = whitelist of shop keys to show.
   const [activeShops, setActiveShops] = useState<Set<string> | null>(null);
 
+  // --- Flash-sale search --------------------------------------------------
+  // Janelle wanted a fast way to pull up a flash sale by shop OR title right
+  // from the home screen, without thumbing through the calendar. The box
+  // lives in the quick-action row next to "Scan QR / ISBN". Results filter
+  // LIVE as she types — no Search button to push. The full list (past +
+  // upcoming) is fetched once, lazily, the first time she touches the box,
+  // then every keystroke just filters that cached list in memory. We
+  // include past/expired sales on purpose — she searches old ones to check
+  // whether she ended up buying them.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [allSales, setAllSales] = useState<FlashSale[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  // Guards the one-time fetch so we don't re-pull on every keystroke.
+  const salesLoadedRef = useRef(false);
+
+  // Pull every flash sale once, the first time she focuses or types in the
+  // box. Cached in `allSales` thereafter; the actual filtering is a cheap
+  // in-memory useMemo below, so typing stays instant.
+  async function ensureSalesLoaded() {
+    if (salesLoadedRef.current) return;
+    salesLoadedRef.current = true;
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const all = await get<FlashSale[]>("/flash-sales?limit=500");
+      setAllSales(all);
+    } catch (e: unknown) {
+      setSearchError(e instanceof Error ? e.message : String(e));
+      salesLoadedRef.current = false; // let a later keystroke retry
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  // Live results — recomputed on every keystroke from the cached list.
+  // null = no query yet (panel hidden); array (possibly empty) = active search.
+  const trimmedQuery = searchQuery.trim();
+  const searchResults = useMemo<FlashSale[] | null>(() => {
+    const q = trimmedQuery.toLowerCase();
+    if (!q || allSales === null) return null;
+    return allSales
+      .filter(
+        (s) =>
+          (s.shop ?? "").toLowerCase().includes(q) ||
+          (s.title ?? "").toLowerCase().includes(q),
+      )
+      // Newest start first so the most recent sale is on top.
+      .sort(
+        (a, b) =>
+          new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
+      );
+  }, [trimmedQuery, allSales]);
+
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchError(null);
+  }
+
+  // Mark a result row's outcome (Purchased / No buy / Pre-order) straight
+  // from the results list. Optimistic on the cached list, with rollback on
+  // failure — same pattern as the calendar day-detail chips. Tapping the
+  // active chip clears it back to undecided.
+  async function setSearchResultStatus(
+    id: string,
+    next: FlashSaleStatus | null,
+  ) {
+    const previous = allSales;
+    setAllSales((rows) =>
+      rows ? rows.map((s) => (s.id === id ? { ...s, status: next } : s)) : rows,
+    );
+    try {
+      await patch<FlashSale>(`/flash-sales/${id}`, { status: next });
+    } catch (e: unknown) {
+      setAllSales(previous ?? null);
+      setSearchError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   // Read ?added=N&addedErrors=M off the URL — set by PhotoCaptureButton
   // after a multi-item screenshot bulk-save. We surface a one-shot success
   // banner the first time the user lands here with that param, then clear
@@ -579,6 +658,22 @@ export function Home() {
             })();
           }}
         />
+        {/* Quick flash-sale search — sits right beside the QR/ISBN scan
+            button. Results filter LIVE as she types (shop or title); there
+            is no button to push. Matches populate below the calendar, in
+            the same spot a tapped day's events would. */}
+        <input
+          type="search"
+          value={searchQuery}
+          onFocus={() => void ensureSalesLoaded()}
+          onChange={(e) => {
+            void ensureSalesLoaded();
+            setSearchQuery(e.target.value);
+          }}
+          placeholder="🔍 Search sales…"
+          aria-label="Search flash sales by shop or title"
+          className="w-44 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
+        />
       </div>
       {scanError && (
         <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
@@ -646,6 +741,125 @@ export function Home() {
           );
         })}
       </div>
+
+      {/* Flash-sale search results — populate below the calendar, in the
+          same place a tapped day's events would. Only renders once a
+          search has been run (searchResults !== null). Includes past +
+          upcoming so Janelle can check old sales too. */}
+      {trimmedQuery !== "" && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-pink-200">
+              Search results
+              <span className="text-pink-400"> for “{trimmedQuery}”</span>
+              {searchResults && searchResults.length > 0 && (
+                <span className="text-pink-500"> ({searchResults.length})</span>
+              )}
+            </h2>
+            <button
+              onClick={clearSearch}
+              className="text-xs border border-zinc-700 text-pink-300 px-2 py-0.5 hover:bg-zinc-800"
+            >
+              Clear
+            </button>
+          </div>
+
+          {searchLoading && searchResults === null && (
+            <p className="text-sm text-pink-400">Searching…</p>
+          )}
+          {searchError && (
+            <p className="text-sm text-red-300 border border-red-800 bg-red-950/40 p-2">
+              {searchError}
+            </p>
+          )}
+          {!searchError &&
+            searchResults !== null &&
+            searchResults.length === 0 && (
+              <p className="text-sm text-pink-400">
+                No flash sales match “{trimmedQuery}”.
+              </p>
+            )}
+          {searchResults && searchResults.length > 0 && (
+            <ul className="card divide-y divide-zinc-800">
+              {searchResults.map((s) => {
+                const ended = new Date(s.ends_at).getTime() < Date.now();
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/flash-sales?id=${s.id}`)}
+                      className="w-full px-3 py-2 flex items-center gap-3 text-sm text-left hover:bg-zinc-800 active:bg-zinc-800"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-pink-200">
+                          {s.title ?? s.shop}
+                          {ended && (
+                            <span className="ml-2 text-xs text-pink-500">
+                              (ended)
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-pink-400">{s.shop}</div>
+                        <div className="text-xs text-pink-400">
+                          {fromISOLocal(s.starts_at)} →{" "}
+                          {fromISOLocal(s.ends_at)}
+                        </div>
+                        {s.url && (
+                          <div className="text-xs">
+                            <a
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-pink-300 underline"
+                            >
+                              link
+                            </a>
+                          </div>
+                        )}
+                        {s.notes && (
+                          <div className="text-xs text-pink-500 truncate">
+                            {s.notes}
+                          </div>
+                        )}
+                        {/* Outcome chips so she can see/mark whether she
+                            bought from this sale, right from the results. */}
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {STATUS_OPTIONS.map((opt) => {
+                            const active = s.status === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void setSearchResultStatus(
+                                    s.id,
+                                    active ? null : opt.value,
+                                  );
+                                }}
+                                aria-pressed={active}
+                                className={[
+                                  "px-2 py-0.5 text-xs border",
+                                  active
+                                    ? "bg-pink-500 text-black border-pink-400"
+                                    : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                                ].join(" ")}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Day detail */}
       <div ref={dayDetailRef} className="mt-4 scroll-mt-2">
