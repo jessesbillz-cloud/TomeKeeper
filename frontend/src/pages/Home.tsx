@@ -101,19 +101,36 @@ function buildGrid(month: Date): Date[] {
 }
 
 /**
- * Format an ISO timestamp as `Mon DD, H:MM AM/PM` in the user's local
- * timezone (e.g. "May 15, 2:00 PM"). Year is intentionally omitted —
- * the day-detail header above already shows the full date, so the meta
- * line just needs month, day, and time.
+ * "May 4, 2026" from a `YYYY-MM-DD` calendar-day string.
+ *
+ * Parsed as a LOCAL day on purpose: `new Date("2026-05-04")` is UTC midnight,
+ * which renders as May 3 anywhere west of Greenwich. Splitting the parts and
+ * feeding them to the Date(y, m, d) constructor keeps the label identical to
+ * the calendar tile the row was opened from.
  */
-function fromISOLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
+function formatCalendarDay(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    year: "numeric",
+  });
+}
+
+/**
+ * The single calendar day a flash sale belongs to in the results list: the
+ * day its window OPENS, in local time. Sales can run for weeks, but the list
+ * shows one date, not a range — a three-week sale reads as its start day and
+ * nothing else. Matches `starts_at`, which is also the sort key.
+ */
+function saleDayLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
@@ -209,6 +226,10 @@ function SaleResultsList({
                   )}
                 </div>
                 <div className="text-xs text-pink-400">{s.shop}</div>
+                {/* The day the sale opens — one date, never a range. */}
+                <div className="text-xs text-pink-400">
+                  {saleDayLabel(s.starts_at)}
+                </div>
                 {s.notes && (
                   <div className="text-xs text-pink-500 truncate">
                     {s.notes}
@@ -1187,16 +1208,14 @@ export function Home() {
                       {ev.shop && (
                         <div className="text-xs text-pink-400">{ev.shop}</div>
                       )}
-                      {ev.starts_at && ev.ends_at ? (
-                        <div className="text-xs text-pink-400">
-                          {fromISOLocal(ev.starts_at)} →{" "}
-                          {fromISOLocal(ev.ends_at)}
-                        </div>
-                      ) : ev.at ? (
-                        <div className="text-xs text-pink-400">
-                          {fromISOLocal(ev.at)}
-                        </div>
-                      ) : null}
+                      {/* Just the calendar day this row sits on. A sale
+                          running three weeks is emitted once per day it
+                          covers, each carrying its own `ev.date`, so this
+                          always reads as the day you actually tapped —
+                          not a start → end window and not a time. */}
+                      <div className="text-xs text-pink-400">
+                        {formatCalendarDay(ev.date)}
+                      </div>
                       {ev.url && (
                         <div className="text-xs">
                           <a
