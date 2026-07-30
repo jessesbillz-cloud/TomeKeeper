@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
+import { HolidayTheme } from "../components/HolidayTheme";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
@@ -638,6 +639,11 @@ export function Home() {
   return (
     <div>
       <ProcessingBanner show={Boolean(bannerStatus)} message={bannerStatus} />
+
+      {/* Holiday banner + particle overlay. Renders nothing on an ordinary
+          day; which holiday is up, and for how long, lives entirely in
+          lib/holidays.ts. */}
+      <HolidayTheme />
 
       {/* One-shot success banner after a multi-item AI screenshot scan
           drops the user back here with ?added=N. Shows a count plus, if

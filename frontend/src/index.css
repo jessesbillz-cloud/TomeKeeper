@@ -26,3 +26,41 @@ body {
       0 6px 22px rgba(255, 255, 255, 0.08);
   }
 }
+
+/* Halloween banner — a slow guttering-candle flicker on the text and border,
+   matching the jack-o'-lantern pulse in the canvas overlay behind it. The
+   component only applies this class for Halloween, and never when the user
+   has asked for reduced motion. */
+@keyframes halloween-gutter {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 8px rgba(249, 115, 22, 0.55);
+  }
+  42% {
+    opacity: 0.86;
+    text-shadow: 0 0 14px rgba(249, 115, 22, 0.85);
+  }
+  47% {
+    opacity: 1;
+    text-shadow: 0 0 6px rgba(249, 115, 22, 0.4);
+  }
+  63% {
+    opacity: 0.78;
+    text-shadow: 0 0 18px rgba(249, 115, 22, 0.95);
+  }
+  70% {
+    opacity: 1;
+    text-shadow: 0 0 9px rgba(249, 115, 22, 0.6);
+  }
+}
+
+.halloween-banner {
+  animation: halloween-gutter 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halloween-banner {
+    animation: none;
+  }
+}
