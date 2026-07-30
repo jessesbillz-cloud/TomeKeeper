@@ -134,6 +134,122 @@ const STATUS_OPTIONS: ReadonlyArray<{
 ];
 
 /**
+ * Status-filter dropdown options. "all" is a UI-only sentinel — it is NOT a
+ * value that exists in `flash_sales.status`, so it must never be sent to the
+ * API. Everything else maps 1:1 onto the DB CHECK constraint values
+ * (`purchased` / `no_buy` / `preorder`); note the visible label differs from
+ * the stored value for "No Buy" / "Pre-order", so always read `.value`.
+ *
+ * Rows with a NULL status ("not yet decided") appear under **All** only —
+ * by definition they match none of the three concrete statuses.
+ */
+type StatusFilter = "all" | FlashSaleStatus;
+
+const STATUS_FILTER_OPTIONS: ReadonlyArray<{
+  value: StatusFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "purchased", label: "Purchased" },
+  { value: "no_buy", label: "No Buy" },
+  { value: "preorder", label: "Pre-order" },
+];
+
+type SortDir = "asc" | "desc";
+
+/**
+ * Sort flash sales by `starts_at`. This is the only date field reliably
+ * present on these rows — `ends_at` exists too, but `edition_id` is populated
+ * on almost nothing, so there is no release-date ("when the book actually
+ * arrives") data to sort on. Don't invent one.
+ *
+ * "asc" = Oldest → Newest, "desc" = Newest → Oldest. Returns a new array;
+ * never mutates the cached `allSales` list in place.
+ */
+function sortSales(rows: readonly FlashSale[], dir: SortDir): FlashSale[] {
+  return [...rows].sort((a, b) => {
+    const delta =
+      new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
+    return dir === "asc" ? delta : -delta;
+  });
+}
+
+/**
+ * The flash-sale result row list. Extracted out of the title-search results
+ * block so the status filter renders through the exact same component rather
+ * than a parallel implementation — one row layout, one set of outcome chips,
+ * one navigation behavior. Used for flat lists (search, All / Purchased /
+ * No Buy) and once per section for the Upcoming/Past pre-order split.
+ */
+function SaleResultsList({
+  sales,
+  onOpen,
+  onSetStatus,
+}: {
+  sales: readonly FlashSale[];
+  onOpen: (id: string) => void;
+  onSetStatus: (id: string, next: FlashSaleStatus | null) => void;
+}) {
+  return (
+    <ul className="card divide-y divide-zinc-800">
+      {sales.map((s) => {
+        const ended = new Date(s.ends_at).getTime() < Date.now();
+        return (
+          <li key={s.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(s.id)}
+              className="w-full px-3 py-2 flex items-center gap-3 text-sm text-left hover:bg-zinc-800 active:bg-zinc-800"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-pink-200">
+                  {s.title ?? s.shop}
+                  {ended && (
+                    <span className="ml-2 text-xs text-pink-500">(ended)</span>
+                  )}
+                </div>
+                <div className="text-xs text-pink-400">{s.shop}</div>
+                {s.notes && (
+                  <div className="text-xs text-pink-500 truncate">
+                    {s.notes}
+                  </div>
+                )}
+                {/* Outcome chips so she can see/mark whether she
+                    bought from this sale, right from the results. */}
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {STATUS_OPTIONS.map((opt) => {
+                    const active = s.status === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSetStatus(s.id, active ? null : opt.value);
+                        }}
+                        aria-pressed={active}
+                        className={[
+                          "px-2 py-0.5 text-xs border",
+                          active
+                            ? "bg-pink-500 text-black border-pink-400"
+                            : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
+                        ].join(" ")}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
  * Where should tapping a calendar event take the user?
  *  - releases / preorders / ships / deliveries → the edition detail page,
  *    which is the canonical place to view + edit a book and its order.
@@ -190,6 +306,18 @@ export function Home() {
   // include past/expired sales on purpose — she searches old ones to check
   // whether she ended up buying them.
   const [searchQuery, setSearchQuery] = useState("");
+  // --- Status filter + sort ----------------------------------------------
+  // Sits inline with the search box, above the calendar. `null` = nothing
+  // picked, so the results panel stays hidden and the calendar day-detail is
+  // the only thing below the grid (the page's default state).
+  //
+  // Search and filter are deliberately LAST-ONE-WINS rather than combined:
+  // touching one clears the other, so the results panel always has exactly
+  // one owner and the header never has to explain a compound query.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter | null>(null);
+  // Default matches the behavior the title search already had before the
+  // toggle existed: most recent sale on top.
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [allSales, setAllSales] = useState<FlashSale[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -221,22 +349,79 @@ export function Home() {
   const searchResults = useMemo<FlashSale[] | null>(() => {
     const q = trimmedQuery.toLowerCase();
     if (!q || allSales === null) return null;
-    return allSales
-      .filter(
-        (s) =>
-          (s.shop ?? "").toLowerCase().includes(q) ||
-          (s.title ?? "").toLowerCase().includes(q),
-      )
-      // Newest start first so the most recent sale is on top.
-      .sort(
-        (a, b) =>
-          new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
-      );
-  }, [trimmedQuery, allSales]);
+    const matches = allSales.filter(
+      (s) =>
+        (s.shop ?? "").toLowerCase().includes(q) ||
+        (s.title ?? "").toLowerCase().includes(q),
+    );
+    // The sort toggle governs the results panel regardless of which control
+    // populated it, so search results honor it too.
+    return sortSales(matches, sortDir);
+  }, [trimmedQuery, allSales, sortDir]);
 
-  function clearSearch() {
+  // Rows for the status filter. `null` when no filter is picked (or the cache
+  // hasn't landed yet) so the panel stays hidden. "all" includes the
+  // NULL-status "not yet decided" rows; the three concrete filters can't, by
+  // definition, match them.
+  const filterResults = useMemo<FlashSale[] | null>(() => {
+    if (statusFilter === null || allSales === null) return null;
+    const rows =
+      statusFilter === "all"
+        ? allSales
+        : allSales.filter((s) => s.status === statusFilter);
+    return sortSales(rows, sortDir);
+  }, [statusFilter, allSales, sortDir]);
+
+  // Pre-orders straddle today: some presales have already closed, others
+  // haven't opened yet, and a single flat sort interleaves the dead ones with
+  // the ones she can still act on. So for `preorder` only, split into two
+  // labeled sections instead of overriding her sort choice — the chosen
+  // direction then applies within each section independently, which makes
+  // "Oldest → Newest" read as "opening soonest first" under Upcoming.
+  //
+  // The split compares absolute instants (epoch ms on both sides), NOT
+  // formatted local dates, so a sale lands in the same section no matter what
+  // timezone the viewer is in. `nowMs` is sampled once per recompute so a row
+  // can never appear in both sections. Other filters get a flat list.
+  const preorderSections = useMemo(() => {
+    if (statusFilter !== "preorder" || filterResults === null) return null;
+    const nowMs = Date.now();
+    const upcoming: FlashSale[] = [];
+    const past: FlashSale[] = [];
+    for (const s of filterResults) {
+      if (new Date(s.ends_at).getTime() >= nowMs) upcoming.push(s);
+      else past.push(s);
+    }
+    // filterResults is already sorted, and a stable partition preserves that
+    // order inside each bucket — no re-sort needed.
+    return { upcoming, past };
+  }, [statusFilter, filterResults]);
+
+  // Which control owns the results panel right now.
+  const resultsMode: "search" | "filter" | null =
+    trimmedQuery !== "" ? "search" : statusFilter !== null ? "filter" : null;
+
+  const activeFilterLabel =
+    STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ?? "";
+
+  // Clears the results panel whichever control populated it.
+  function clearResults() {
+    setSearchQuery("");
+    setStatusFilter(null);
+    setSearchError(null);
+  }
+
+  // Last-one-wins: picking a status filter drops whatever was in the search
+  // box, so the panel below never shows a compound search-AND-filter result.
+  function onStatusFilterChange(raw: string) {
+    if (raw === "") {
+      setStatusFilter(null);
+      return;
+    }
+    void ensureSalesLoaded();
     setSearchQuery("");
     setSearchError(null);
+    setStatusFilter(raw as StatusFilter);
   }
 
   // Mark a result row's outcome (Purchased / No buy / Pre-order) straight
@@ -668,6 +853,9 @@ export function Home() {
           onFocus={() => void ensureSalesLoaded()}
           onChange={(e) => {
             void ensureSalesLoaded();
+            // Last-one-wins: typing takes the results panel back from the
+            // status filter.
+            if (e.target.value.trim() !== "") setStatusFilter(null);
             setSearchQuery(e.target.value);
           }}
           enterKeyHint="search"
@@ -684,6 +872,45 @@ export function Home() {
           aria-label="Search flash sales by shop or title"
           className="w-44 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
         />
+        {/* Status filter — inline with the search box, above the calendar.
+            Native <select> so it gets the OS picker on her phone. Applies
+            immediately on change; there is no Apply button. The option
+            values are the raw DB values, never the labels. */}
+        <select
+          value={statusFilter ?? ""}
+          onFocus={() => void ensureSalesLoaded()}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
+          aria-label="Filter flash sales by status"
+          className="border border-zinc-700 bg-zinc-900 text-pink-100 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
+        >
+          <option value="">🏷️ Status…</option>
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {/* Sort-direction toggle. Keyed on `starts_at`. Applies to whatever
+            is in the results panel, and — for the pre-order split — within
+            each of the Upcoming / Past sections independently. */}
+        <button
+          type="button"
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          aria-label={
+            sortDir === "asc"
+              ? "Sorted oldest to newest by start date. Switch to newest first."
+              : "Sorted newest to oldest by start date. Switch to oldest first."
+          }
+          title={
+            sortDir === "asc" ? "Oldest → Newest" : "Newest → Oldest"
+          }
+          className="border border-zinc-700 bg-zinc-900 text-pink-300 px-2 py-1 text-sm hover:bg-zinc-800 flex items-center gap-1"
+        >
+          <span aria-hidden>⇅</span>
+          <span className="text-xs">
+            {sortDir === "asc" ? "Oldest" : "Newest"}
+          </span>
+        </button>
       </div>
       {scanError && (
         <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
@@ -752,109 +979,157 @@ export function Home() {
         })}
       </div>
 
-      {/* Flash-sale search results — populate below the calendar, in the
-          same place a tapped day's events would. Only renders once a
-          search has been run (searchResults !== null). Includes past +
-          upcoming so Janelle can check old sales too. */}
-      {trimmedQuery !== "" && (
+      {/* Flash-sale results panel — populates below the calendar, in the
+          same place a tapped day's events would. Driven by EITHER the title
+          search or the status dropdown, never both at once (last-one-wins),
+          so `resultsMode` names the single owner. Both paths render through
+          the same <SaleResultsList>, and both include past + upcoming rows
+          on purpose: she looks up old sales to check what she ended up
+          doing about them. */}
+      {resultsMode !== null && (
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-pink-200">
-              Search results
-              <span className="text-pink-400"> for “{trimmedQuery}”</span>
-              {searchResults && searchResults.length > 0 && (
-                <span className="text-pink-500"> ({searchResults.length})</span>
+              {resultsMode === "search" ? (
+                <>
+                  Search results
+                  <span className="text-pink-400"> for “{trimmedQuery}”</span>
+                  {searchResults && searchResults.length > 0 && (
+                    <span className="text-pink-500">
+                      {" "}
+                      ({searchResults.length})
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  {activeFilterLabel}
+                  {filterResults && filterResults.length > 0 && (
+                    <span className="text-pink-500">
+                      {" "}
+                      ({filterResults.length})
+                    </span>
+                  )}
+                  <span className="text-pink-400">
+                    {" "}
+                    · {sortDir === "asc" ? "oldest first" : "newest first"}
+                  </span>
+                </>
               )}
             </h2>
             <button
-              onClick={clearSearch}
+              onClick={clearResults}
               className="text-xs border border-zinc-700 text-pink-300 px-2 py-0.5 hover:bg-zinc-800"
             >
               Clear
             </button>
           </div>
 
-          {searchLoading && searchResults === null && (
-            <p className="text-sm text-pink-400">Searching…</p>
-          )}
+          {searchLoading &&
+            searchResults === null &&
+            filterResults === null && (
+              <p className="text-sm text-pink-400">Loading sales…</p>
+            )}
           {searchError && (
             <p className="text-sm text-red-300 border border-red-800 bg-red-950/40 p-2">
               {searchError}
             </p>
           )}
-          {!searchError &&
-            searchResults !== null &&
-            searchResults.length === 0 && (
-              <p className="text-sm text-pink-400">
-                No flash sales match “{trimmedQuery}”.
-              </p>
-            )}
-          {searchResults && searchResults.length > 0 && (
-            <ul className="card divide-y divide-zinc-800">
-              {searchResults.map((s) => {
-                const ended = new Date(s.ends_at).getTime() < Date.now();
-                return (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/flash-sales?id=${s.id}`)}
-                      className="w-full px-3 py-2 flex items-center gap-3 text-sm text-left hover:bg-zinc-800 active:bg-zinc-800"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-pink-200">
-                          {s.title ?? s.shop}
-                          {ended && (
-                            <span className="ml-2 text-xs text-pink-500">
-                              (ended)
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-pink-400">{s.shop}</div>
-                        {s.notes && (
-                          <div className="text-xs text-pink-500 truncate">
-                            {s.notes}
-                          </div>
-                        )}
-                        {/* Outcome chips so she can see/mark whether she
-                            bought from this sale, right from the results. */}
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {STATUS_OPTIONS.map((opt) => {
-                            const active = s.status === opt.value;
-                            return (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void setSearchResultStatus(
-                                    s.id,
-                                    active ? null : opt.value,
-                                  );
-                                }}
-                                aria-pressed={active}
-                                className={[
-                                  "px-2 py-0.5 text-xs border",
-                                  active
-                                    ? "bg-pink-500 text-black border-pink-400"
-                                    : "bg-zinc-900 text-pink-300 border-zinc-700 hover:bg-zinc-800",
-                                ].join(" ")}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+
+          {/* --- Title search: single flat list --- */}
+          {!searchError && resultsMode === "search" && (
+            <>
+              {searchResults !== null && searchResults.length === 0 && (
+                <p className="text-sm text-pink-400">
+                  No flash sales match “{trimmedQuery}”.
+                </p>
+              )}
+              {searchResults && searchResults.length > 0 && (
+                <SaleResultsList
+                  sales={searchResults}
+                  onOpen={(id) => navigate(`/flash-sales?id=${id}`)}
+                  onSetStatus={(id, next) =>
+                    void setSearchResultStatus(id, next)
+                  }
+                />
+              )}
+            </>
+          )}
+
+          {/* --- Status filter --- */}
+          {!searchError && resultsMode === "filter" && (
+            <>
+              {filterResults !== null && filterResults.length === 0 && (
+                <p className="text-sm text-pink-400">
+                  No flash sales marked “{activeFilterLabel}”.
+                </p>
+              )}
+
+              {/* Pre-orders get the Upcoming / Past split; every other
+                  filter (All / Purchased / No Buy) gets one flat list. */}
+              {preorderSections !== null ? (
+                <div className="space-y-4">
+                  <section>
+                    <h3 className="text-xs uppercase tracking-wide text-pink-400 mb-1">
+                      Upcoming
+                      <span className="text-pink-500">
+                        {" "}
+                        ({preorderSections.upcoming.length})
+                      </span>
+                    </h3>
+                    {preorderSections.upcoming.length === 0 ? (
+                      <p className="text-sm text-pink-400">
+                        No pre-orders still open.
+                      </p>
+                    ) : (
+                      <SaleResultsList
+                        sales={preorderSections.upcoming}
+                        onOpen={(id) => navigate(`/flash-sales?id=${id}`)}
+                        onSetStatus={(id, next) =>
+                          void setSearchResultStatus(id, next)
+                        }
+                      />
+                    )}
+                  </section>
+                  <section>
+                    <h3 className="text-xs uppercase tracking-wide text-pink-400 mb-1">
+                      Past
+                      <span className="text-pink-500">
+                        {" "}
+                        ({preorderSections.past.length})
+                      </span>
+                    </h3>
+                    {preorderSections.past.length === 0 ? (
+                      <p className="text-sm text-pink-400">
+                        No closed pre-orders.
+                      </p>
+                    ) : (
+                      <SaleResultsList
+                        sales={preorderSections.past}
+                        onOpen={(id) => navigate(`/flash-sales?id=${id}`)}
+                        onSetStatus={(id, next) =>
+                          void setSearchResultStatus(id, next)
+                        }
+                      />
+                    )}
+                  </section>
+                </div>
+              ) : (
+                filterResults &&
+                filterResults.length > 0 && (
+                  <SaleResultsList
+                    sales={filterResults}
+                    onOpen={(id) => navigate(`/flash-sales?id=${id}`)}
+                    onSetStatus={(id, next) =>
+                      void setSearchResultStatus(id, next)
+                    }
+                  />
+                )
+              )}
+            </>
           )}
         </div>
-      )}
-
-      {/* Day detail */}
+      )}      {/* Day detail */}
       <div ref={dayDetailRef} className="mt-4 scroll-mt-2">
         <h2 className="text-sm font-semibold mb-2 text-pink-200">
           {selectedDate.toLocaleDateString(undefined, {
