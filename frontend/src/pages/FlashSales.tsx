@@ -71,19 +71,19 @@ function fromISO(iso: string): string {
 }
 
 /**
- * Display formatter — `Mon DD, H:MM AM/PM` in the user's local
- * timezone (e.g. "May 15, 2:00 PM"). Year is intentionally dropped
- * so the row stays compact and matches the calendar day-detail
- * panel byte-for-byte.
+ * Display formatter — the single local calendar day a sale opens on, e.g.
+ * "Jul 17, 2026". One date, no time, no `start → end` range: a sale that
+ * runs three weeks reads as its start day, and a same-day sale no longer
+ * reads as the useless "Jul 17, 12:00 AM → Jul 17, 9:00 PM". Mirrors
+ * `saleDayLabel` in Home.tsx so the two surfaces stay identical.
  */
 function fromISODisplay(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
+  return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    year: "numeric",
   });
 }
 
@@ -665,14 +665,12 @@ export function FlashSales() {
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-pink-200">{s.title ?? s.shop}</div>
-                {/* Stacked meta — shop, time range, link each on their
-                    own line. Matches the calendar day-detail row exactly
-                    so the two surfaces read identically regardless of
-                    string length. */}
+                {/* Stacked meta — shop, day, link each on their own line.
+                    Matches the calendar day-detail row exactly so the two
+                    surfaces read identically regardless of string length. */}
                 <div className="text-xs text-pink-400">{s.shop}</div>
                 <div className="text-xs text-pink-400">
-                  {fromISODisplay(s.starts_at)} →{" "}
-                  {fromISODisplay(s.ends_at)}
+                  {fromISODisplay(s.starts_at)}
                 </div>
                 {s.url && (
                   <div className="text-xs">
