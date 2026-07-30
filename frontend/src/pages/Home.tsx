@@ -432,6 +432,19 @@ export function Home() {
     setSearchError(null);
   }
 
+  /**
+   * Tapping a calendar day is the THIRD way to populate the area below the
+   * grid, alongside the title search and the status filter — and it wins the
+   * same way they win over each other. Picking a day clears whatever query or
+   * filter was showing, so that space always holds exactly one list: the day
+   * you just tapped. Otherwise search results and day events stack up and it
+   * is not obvious which list is which, or why the page suddenly got long.
+   */
+  function selectDay(d: Date) {
+    clearResults();
+    setSelectedDate(d);
+  }
+
   // Last-one-wins: picking a status filter drops whatever was in the search
   // box, so the panel below never shows a compound search-AND-filter result.
   function onStatusFilterChange(raw: string) {
@@ -677,7 +690,7 @@ export function Home() {
             onClick={() => {
               const now = new Date();
               setCurrentMonth(startOfMonth(now));
-              setSelectedDate(now);
+              selectDay(now);
             }}
             className="border border-zinc-700 px-2 py-0.5 text-sm text-pink-300 hover:bg-zinc-800"
           >
@@ -962,7 +975,7 @@ export function Home() {
           return (
             <button
               key={d.toISOString()}
-              onClick={() => setSelectedDate(d)}
+              onClick={() => selectDay(d)}
               className={[
                 "min-h-[72px] border-t border-l border-zinc-800 px-2 py-1 text-left flex flex-col",
                 "hover:bg-zinc-800",
