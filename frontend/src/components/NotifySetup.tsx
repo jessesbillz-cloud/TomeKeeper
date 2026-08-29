@@ -154,7 +154,16 @@ export function NotifySetup() {
         <div
           role="dialog"
           aria-label="Set up phone notifications"
-          className="absolute right-0 top-full mt-1 w-80 max-w-[90vw] z-30 card p-3 text-sm text-pink-200 shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
+          /* Fixed and centered rather than anchored to the button. The
+             bell lives on the LEFT of the calendar header, so a panel
+             hung off the button's edge ran straight off the side of a
+             phone screen. Centering on the viewport means it can't run
+             off any edge no matter where the trigger sits, and the
+             max-height keeps the three steps scrollable on a short
+             screen instead of spilling past the bottom. z-[60] clears
+             the floating + button (z-50) and sits under the error
+             banner (z-70). */
+          className="fixed left-1/2 -translate-x-1/2 top-16 w-[min(23rem,calc(100vw-1.5rem))] max-h-[75vh] overflow-y-auto z-[60] card p-3 text-sm text-pink-200 shadow-[0_8px_32px_rgba(0,0,0,0.75)]"
         >
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold flex items-center gap-2">
