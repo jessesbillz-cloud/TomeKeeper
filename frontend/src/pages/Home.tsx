@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { HolidayTheme } from "../components/HolidayTheme";
@@ -606,6 +612,56 @@ export function Home() {
     return map;
   }, [filteredEvents]);
 
+  // ---- Swipe the grid to change month -------------------------------
+  //
+  // Kept in refs, not state: a finger moving across the screen must not
+  // re-render the calendar on every frame.
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Set when a swipe actually changed the month, so the day cell the
+  // finger happened to lift over doesn't also register as a tap and
+  // select a day she never meant to pick.
+  const swipeConsumedRef = useRef(false);
+
+  /** Past this, a horizontal movement is a deliberate swipe. */
+  const SWIPE_MIN_PX = 50;
+  /** And it has to be this much more horizontal than vertical. */
+  const SWIPE_AXIS_RATIO = 1.5;
+
+  function onGridTouchStart(e: ReactTouchEvent) {
+    // Two fingers means a pinch/zoom — not ours.
+    if (e.touches.length !== 1) {
+      swipeStartRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    swipeStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+
+  function onGridTouchEnd(e: ReactTouchEvent) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    if (Math.abs(dx) < SWIPE_MIN_PX) return;
+    if (Math.abs(dx) < Math.abs(dy) * SWIPE_AXIS_RATIO) return;
+
+    // Swipe left = go forward, matching every calendar and photo roll
+    // she already uses.
+    setCurrentMonth((m) => addMonths(m, dx < 0 ? 1 : -1));
+    swipeConsumedRef.current = true;
+    // Cleared on a timer because the synthetic click lands after
+    // touchend; 400ms is comfortably longer than that gap and far
+    // shorter than any real follow-up tap.
+    window.setTimeout(() => {
+      swipeConsumedRef.current = false;
+    }, 400);
+  }
+
   // When the user taps a calendar day, scroll the day-detail panel
   // below the grid into view so they don't have to thumb-scroll. We
   // skip the very first render so opening the page doesn't auto-jump.
@@ -689,36 +745,49 @@ export function Home() {
       )}
 
       {/* Calendar header row: month label + phone-notification setup +
-          prev/today/next nav. */}
+          two big month arrows.
+
+          The old "Today" button is gone. Its job moved onto the month
+          label itself — tap the month name to come back to today — so
+          the function survives without a third button competing for
+          thumb space. */}
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-base font-semibold text-pink-200">
-            {monthLabel}
-          </h1>
-          <NotifySetup />
-        </div>
-        <div className="flex items-center gap-1">
           <button
-            onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
-            className="border border-zinc-700 px-2 py-0.5 text-sm text-pink-300 hover:bg-zinc-800"
-          >
-            ‹ Prev
-          </button>
-          <button
+            type="button"
             onClick={() => {
               const now = new Date();
               setCurrentMonth(startOfMonth(now));
               selectDay(now);
             }}
-            className="border border-zinc-700 px-2 py-0.5 text-sm text-pink-300 hover:bg-zinc-800"
+            title="Jump back to today"
+            className="text-base font-semibold text-pink-200 hover:text-pink-100 text-left truncate"
           >
-            Today
+            {monthLabel}
+          </button>
+          <NotifySetup />
+        </div>
+        {/* Deliberately oversized: 56×44px each, which is above the
+            one-handed-thumb minimum, and the only two controls up here
+            so a mis-tap can't do anything unexpected. */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+            aria-label="Previous month"
+            title="Previous month"
+            className="w-14 h-11 flex items-center justify-center border border-zinc-700 text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
+          >
+            <span aria-hidden>◀</span>
           </button>
           <button
+            type="button"
             onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-            className="border border-zinc-700 px-2 py-0.5 text-sm text-pink-300 hover:bg-zinc-800"
+            aria-label="Next month"
+            title="Next month"
+            className="w-14 h-11 flex items-center justify-center border border-zinc-700 text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
           >
-            Next ›
+            <span aria-hidden>▶</span>
           </button>
         </div>
       </div>
@@ -970,8 +1039,32 @@ export function Home() {
         </p>
       )}
 
-      {/* Month grid */}
-      <div className="grid grid-cols-7 card">
+      {/* Month grid.
+
+          Swipe left / right anywhere on the grid to change month. This
+          is safe for vertical scrolling for two reasons:
+
+          1. `touchAction: "pan-y"` tells the browser it still owns
+             vertical panning here. We never call preventDefault, so a
+             scroll is a scroll — the browser handles it natively and
+             this code never enters the picture.
+          2. A gesture only counts as a month change if it travelled
+             more than 50px horizontally AND at least 1.5× further
+             horizontally than vertically. A diagonal thumb-flick while
+             scrolling fails that test and is ignored.
+
+          Only the grid listens, so the rest of the page — the day
+          detail below, the search results above — scrolls exactly as
+          it did before. */}
+      <div
+        className="grid grid-cols-7 card"
+        style={{ touchAction: "pan-y" }}
+        onTouchStart={onGridTouchStart}
+        onTouchEnd={onGridTouchEnd}
+        onTouchCancel={() => {
+          swipeStartRef.current = null;
+        }}
+      >
         {WEEKDAYS.map((d) => (
           <div
             key={d}
@@ -993,7 +1086,12 @@ export function Home() {
           return (
             <button
               key={d.toISOString()}
-              onClick={() => selectDay(d)}
+              onClick={() => {
+                // Ignore the click a swipe leaves behind — she was
+                // changing month, not picking a day.
+                if (swipeConsumedRef.current) return;
+                selectDay(d);
+              }}
               className={[
                 "min-h-[72px] border-t border-l border-zinc-800 px-2 py-1 text-left flex flex-col",
                 "hover:bg-zinc-800",
