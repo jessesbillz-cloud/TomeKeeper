@@ -5,37 +5,14 @@ import {
   useState,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { HolidayTheme } from "../components/HolidayTheme";
-import { NotifySetup } from "../components/NotifySetup";
 import { NotifyToggle } from "../components/NotifyToggle";
-import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
-import { ProcessingBanner } from "../components/ProcessingBanner";
-import { QRScanButton } from "../components/QRScanButton";
 import { calendarEventTarget, flashSaleTargetFor } from "../lib/alerts";
 import { get, patch } from "../lib/api";
-import { lookupIsbn } from "../lib/isbnLookup";
 import { useSelectedDay } from "../lib/selectedDayContext";
 import type { CalendarEvent, FlashSale, FlashSaleStatus } from "../lib/types";
-
-/**
- * Pull a likely ISBN out of a scanned QR/barcode payload.
- *  - EAN-13 / ISBN-13 → 13 digits, usually starting with 978/979
- *  - ISBN-10 → 10 digits or 9 digits + "X"
- *  - URL containing /isbn/<digits> → extract
- * Returns the cleaned ISBN, or null if we don't recognize it.
- */
-function extractIsbn(text: string): string | null {
-  const trimmed = text.trim();
-  // Match an ISBN inside a URL path (Goodreads, Amazon, etc.)
-  const urlMatch = trimmed.match(/(?:isbn[/:= ]?)(\d{9,13}[Xx]?)/i);
-  if (urlMatch) return urlMatch[1].toUpperCase();
-  // Strip dashes / spaces and check raw digits
-  const cleaned = trimmed.replace(/[\s-]/g, "");
-  if (/^(?:97[89])?\d{9}[\dXx]$/.test(cleaned)) return cleaned.toUpperCase();
-  return null;
-}
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -326,9 +303,6 @@ export function Home() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  // Background work shown via the global ProcessingBanner. Empty = hide.
-  const [bannerStatus, setBannerStatus] = useState<string>("");
 
   // null = "show all shops". Non-null = whitelist of shop keys to show.
   const [activeShops, setActiveShops] = useState<Set<string> | null>(null);
@@ -703,8 +677,6 @@ export function Home() {
 
   return (
     <div>
-      <ProcessingBanner show={Boolean(bannerStatus)} message={bannerStatus} />
-
       {/* Holiday banner + particle overlay. Renders nothing on an ordinary
           day; which holiday is up, and for how long, lives entirely in
           lib/holidays.ts. */}
@@ -743,54 +715,6 @@ export function Home() {
           </button>
         </div>
       )}
-
-      {/* Calendar header row: month label + phone-notification setup +
-          two big month arrows.
-
-          The old "Today" button is gone. Its job moved onto the month
-          label itself — tap the month name to come back to today — so
-          the function survives without a third button competing for
-          thumb space. */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <button
-            type="button"
-            onClick={() => {
-              const now = new Date();
-              setCurrentMonth(startOfMonth(now));
-              selectDay(now);
-            }}
-            title="Jump back to today"
-            className="text-base font-semibold text-pink-200 hover:text-pink-100 text-left truncate"
-          >
-            {monthLabel}
-          </button>
-          <NotifySetup />
-        </div>
-        {/* Deliberately oversized: 56×44px each, which is above the
-            one-handed-thumb minimum, and the only two controls up here
-            so a mis-tap can't do anything unexpected. */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
-            aria-label="Previous month"
-            title="Previous month"
-            className="w-14 h-11 flex items-center justify-center border border-zinc-700 text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
-          >
-            <span aria-hidden>◀</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-            aria-label="Next month"
-            title="Next month"
-            className="w-14 h-11 flex items-center justify-center border border-zinc-700 text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
-          >
-            <span aria-hidden>▶</span>
-          </button>
-        </div>
-      </div>
 
       {/* Shop filter — collapsed by default into a tiny disclosure. The
           per-shop chip strip used to live here always-on, but with a
@@ -858,112 +782,14 @@ export function Home() {
         </details>
       )}
 
-      {/* Banner-slot quick-add actions. These used to live below the
-          calendar grid (under the day-detail header); they were lifted
-          here, into the spot the old subscribe banner occupied, so the
-          most-used actions sit above the grid art. They still operate
-          on whatever day is currently selected via `selectedKey`. */}
-      {/* The "+ Flash sale" pink button used to live here too. Its
-          function (open the FlashSales add-form) has been moved onto
-          the global floating bottom-right button so the same action
-          is one thumb-tap from any screen — not just the calendar.
-          Day-context still lives on for the publisher-sale, AI
-          screenshot, and QR/ISBN scan quick-adds below, which all
-          benefit from being tied to `selectedKey`. */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        <Link
-          to={`/publisher-sales-events?starts=${selectedKey}`}
-          className="border border-pink-400 text-pink-200 px-3 py-1 text-sm hover:bg-zinc-800"
-        >
-          🏷️ Publisher sale event
-        </Link>
-        <PhotoCaptureButton
-          to="/capture"
-          searchParams={{ release_date: selectedKey }}
-          mode="library"
-          label="✨ Scan screenshot (AI)"
-          aiScan
-        />
-        <QRScanButton
-          label="📱 Scan QR / ISBN"
-          onResult={(text) => {
-            const isbn = extractIsbn(text);
-            if (!isbn) {
-              setScanError(
-                `Couldn't read an ISBN from "${text.slice(0, 40)}${
-                  text.length > 40 ? "…" : ""
-                }". Try the barcode on the back cover.`,
-              );
-              return;
-            }
-            setScanError(null);
-            // Fire-and-forget the lookup so the QR modal closes
-            // immediately and the user gets a "looking up…" banner
-            // while we hit Open Library / Google Books. Whatever we
-            // find (or don't) gets forwarded into Capture's location
-            // state so the form lands prefilled — no extra tap.
-            setBannerStatus("🔎 Looking up ISBN…");
-            void (async () => {
-              try {
-                const result = await lookupIsbn(isbn);
-                const params = new URLSearchParams({
-                  isbn,
-                  from: "scan",
-                  release_date: selectedKey,
-                });
-                // Mirror the AI flow's location.state shape so Capture
-                // can use the same prefill code path.
-                const scanFields = result
-                  ? {
-                      title: result.title,
-                      author: result.author,
-                      series: result.series,
-                      series_number: result.series_number,
-                      edition_name: result.edition_name,
-                      publisher_or_shop: result.publisher_or_shop,
-                      retailer: result.retailer,
-                      release_date: result.release_date,
-                      isbn: result.isbn ?? isbn,
-                      edition_size: result.edition_size,
-                      special_features: result.special_features,
-                      preorder_start_at: result.preorder_start_at,
-                      preorder_end_at: result.preorder_end_at,
-                      notes: result.notes,
-                    }
-                  : null;
-                navigate(`/capture?${params.toString()}`, {
-                  state: {
-                    // Carry the cover the lookup found (if any) into
-                    // Capture so it lands as cover_url.
-                    photoDataUrl: result?.cover_url ?? undefined,
-                    scanFields,
-                    scanError:
-                      result && result.title
-                        ? null
-                        : "Couldn't find this ISBN online. Fill in the rest by hand.",
-                  },
-                });
-              } catch (e) {
-                // Network / parse failures land on Capture with just
-                // the ISBN prefilled; user can keep going.
-                const params = new URLSearchParams({
-                  isbn,
-                  from: "scan",
-                  release_date: selectedKey,
-                });
-                navigate(`/capture?${params.toString()}`, {
-                  state: {
-                    scanFields: null,
-                    scanError:
-                      e instanceof Error ? e.message : String(e),
-                  },
-                });
-              } finally {
-                setBannerStatus("");
-              }
-            })();
-          }}
-        />
+      {/* Search + status + sort, on one line directly above the grid.
+
+          The publisher-sale, AI-screenshot and QR/ISBN quick-adds that
+          used to sit here were removed — Janelle never used any of the
+          three, and they cost two wrapped rows of vertical space that
+          pushed the calendar below the fold. Nothing here got smaller;
+          there is simply less of it. */}
+      <div className="flex items-center gap-2 mb-3">
         {/* Quick flash-sale search — sits right beside the QR/ISBN scan
             button. Results filter LIVE as she types (shop or title); there
             is no button to push. Matches populate below the calendar, in
@@ -991,7 +817,7 @@ export function Home() {
           }}
           placeholder="🔍 Search sales…"
           aria-label="Search flash sales by shop or title"
-          className="w-44 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
+          className="flex-1 min-w-0 border border-zinc-700 bg-zinc-900 text-pink-100 placeholder:text-pink-500/60 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
         />
         {/* Status filter — inline with the search box, above the calendar.
             Native <select> so it gets the OS picker on her phone. Applies
@@ -1002,7 +828,7 @@ export function Home() {
           onFocus={() => void ensureSalesLoaded()}
           onChange={(e) => onStatusFilterChange(e.target.value)}
           aria-label="Filter flash sales by status"
-          className="border border-zinc-700 bg-zinc-900 text-pink-100 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
+          className="shrink-0 border border-zinc-700 bg-zinc-900 text-pink-100 px-2 py-1 text-sm focus:outline focus:outline-2 focus:outline-pink-400 focus:-outline-offset-1"
         >
           <option value="">🏷️ Status…</option>
           {STATUS_FILTER_OPTIONS.map((opt) => (
@@ -1025,7 +851,7 @@ export function Home() {
           title={
             sortDir === "asc" ? "Oldest → Newest" : "Newest → Oldest"
           }
-          className="border border-zinc-700 bg-zinc-900 text-pink-300 px-2 py-1 text-sm hover:bg-zinc-800 flex items-center gap-1"
+          className="shrink-0 border border-zinc-700 bg-zinc-900 text-pink-300 px-2 py-1 text-sm hover:bg-zinc-800 flex items-center gap-1"
         >
           <span aria-hidden>⇅</span>
           <span className="text-xs">
@@ -1033,12 +859,6 @@ export function Home() {
           </span>
         </button>
       </div>
-      {scanError && (
-        <p className="text-xs text-red-300 border border-red-800 bg-red-950/40 p-2 mb-3">
-          {scanError}
-        </p>
-      )}
-
       {/* Month grid.
 
           Swipe left / right anywhere on the grid to change month. This
@@ -1053,11 +873,17 @@ export function Home() {
              horizontally than vertically. A diagonal thumb-flick while
              scrolling fails that test and is ignored.
 
-          Only the grid listens, so the rest of the page — the day
+          Only the calendar listens, so the rest of the page — the day
           detail below, the search results above — scrolls exactly as
-          it did before. */}
+          it did before.
+
+          The month name and the two arrows live INSIDE this card now,
+          in a strip above the weekday row. They used to sit on their
+          own line above the calendar; folding them in removes that
+          line entirely without shrinking anything, which is the whole
+          point — the grid starts higher on the screen. */}
       <div
-        className="grid grid-cols-7 card"
+        className="card"
         style={{ touchAction: "pan-y" }}
         onTouchStart={onGridTouchStart}
         onTouchEnd={onGridTouchEnd}
@@ -1065,6 +891,39 @@ export function Home() {
           swipeStartRef.current = null;
         }}
       >
+        <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-1 py-1">
+          <button
+            type="button"
+            onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+            aria-label="Previous month"
+            title="Previous month"
+            className="w-14 h-11 shrink-0 flex items-center justify-center text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
+          >
+            <span aria-hidden>◀</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const now = new Date();
+              setCurrentMonth(startOfMonth(now));
+              selectDay(now);
+            }}
+            title="Jump back to today"
+            className="min-w-0 truncate text-base font-semibold text-pink-200 hover:text-pink-100"
+          >
+            {monthLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+            aria-label="Next month"
+            title="Next month"
+            className="w-14 h-11 shrink-0 flex items-center justify-center text-pink-300 text-2xl leading-none hover:bg-zinc-800 active:bg-pink-500 active:text-black"
+          >
+            <span aria-hidden>▶</span>
+          </button>
+        </div>
+        <div className="grid grid-cols-7">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
@@ -1127,6 +986,7 @@ export function Home() {
             </button>
           );
         })}
+        </div>
       </div>
 
       {/* Flash-sale results panel — populates below the calendar, in the
