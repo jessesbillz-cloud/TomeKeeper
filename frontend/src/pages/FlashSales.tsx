@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { NotifyToggle } from "../components/NotifyToggle";
+import { flashSaleTargetFor } from "../lib/alerts";
+import { useAlerts } from "../lib/alertsContext";
 import { del, get, patch, post } from "../lib/api";
 import type { FlashSale, FlashSaleStatus } from "../lib/types";
 
@@ -37,6 +40,9 @@ type Form = {
   notes: string;
   /** Outcome marker — Purchased / No buy / Pre-order, or null for undecided. */
   status: FlashSaleStatus | null;
+  /** "Notify me about this" — switched on as part of saving the sale, so
+   *  she never has to save it and then go hunt for the bell. */
+  notify: boolean;
 };
 
 const EMPTY: Form = {
@@ -49,6 +55,7 @@ const EMPTY: Form = {
   all_day: false,
   notes: "",
   status: null,
+  notify: false,
 };
 
 const INPUT_DARK =
@@ -150,6 +157,7 @@ export function FlashSales() {
   );
   const [saving, setSaving] = useState(false);
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const { isOn, turnOn, toggle: toggleAlert } = useAlerts();
 
   async function load() {
     setLoading(true);
@@ -331,12 +339,14 @@ export function FlashSales() {
         setSales((prev) =>
           prev.map((s) => (s.id === editingId ? updated : s)),
         );
+        await syncNotify(updated);
       } else {
         const created = await post<FlashSale>("/flash-sales", {
           ...payload,
           edition_id: null,
         });
         setSales((prev) => [created, ...prev]);
+        await syncNotify(created);
       }
       setForm(EMPTY);
       setAdding(false);
@@ -345,6 +355,23 @@ export function FlashSales() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Reconcile the form's "Notify me" checkbox against the saved row once
+   * we have its id. Deliberately after the save and outside its
+   * try/catch contract: the sale itself is what must succeed, and a
+   * notification that fails to attach surfaces its own error banner
+   * without rolling back the row she just entered.
+   */
+  async function syncNotify(sale: FlashSale) {
+    const target = flashSaleTargetFor(sale);
+    const currentlyOn = isOn(target);
+    if (form.notify && !currentlyOn) {
+      await turnOn(target);
+    } else if (!form.notify && currentlyOn) {
+      await toggleAlert(target);
     }
   }
 
@@ -362,6 +389,7 @@ export function FlashSales() {
       all_day: allDay,
       notes: s.notes ?? "",
       status: s.status ?? null,
+      notify: isOn(flashSaleTargetFor(s)),
     });
     setEditingId(s.id);
     setAdding(true);
@@ -587,6 +615,22 @@ export function FlashSales() {
               className={INPUT_DARK}
             />
           </label>
+          {/* Notify me — set it while entering the sale, not afterwards.
+              The alert is attached to the row as part of Save. */}
+          <label className="col-span-2 flex items-start gap-2 text-xs text-pink-300 border border-zinc-800 bg-zinc-900/60 p-2">
+            <input
+              type="checkbox"
+              checked={form.notify}
+              onChange={(e) => setForm({ ...form, notify: e.target.checked })}
+              className="accent-pink-500 mt-0.5"
+            />
+            <span>
+              <span className="text-pink-200">Notify me about this</span>
+              <span className="block text-pink-500">
+                A banner on your phone at 8 AM Pacific on the day of the sale.
+              </span>
+            </span>
+          </label>
           {/* The same Purchased / No buy / Pre-order buttons as the main
               dashboard, right here on the entry screen. Tapping the active
               one clears it back to undecided. */}
@@ -689,6 +733,10 @@ export function FlashSales() {
                     {s.notes}
                   </div>
                 )}
+                {/* Bell — same control, same meaning, as on the calendar. */}
+                <div className="mt-1">
+                  <NotifyToggle target={flashSaleTargetFor(s)} />
+                </div>
                 {/* Outcome chips — same Purchased / No buy / Pre-order
                     controls as the calendar day-detail rows, so Janelle can
                     mark a buy/pre-order right here without bouncing back to

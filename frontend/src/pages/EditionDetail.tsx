@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { NotifyToggle } from "../components/NotifyToggle";
+import { pacificDay } from "../lib/alerts";
 import { del, get, patch, post } from "../lib/api";
 import type {
   Edition,
@@ -177,6 +179,59 @@ export function EditionDetail() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {/* Notifications for this edition's own dates. Each is
+              labelled, because three unlabelled bells in a row would be
+              indistinguishable once they're all lit. Only rendered when
+              the date exists — with nothing to resolve, the sender would
+              have nothing to fire on. */}
+          {(edition.release_date ||
+            edition.preorder_start_at ||
+            edition.preorder_end_at) && (
+            <div className="mt-3 space-y-1.5">
+              {edition.release_date && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-pink-400 w-28 shrink-0">
+                    Release day
+                  </span>
+                  <NotifyToggle
+                    target={{
+                      kind: "release",
+                      sourceId: edition.id,
+                      notifyDay: edition.release_date.slice(0, 10),
+                    }}
+                  />
+                </div>
+              )}
+              {edition.preorder_start_at && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-pink-400 w-28 shrink-0">
+                    Pre-order opens
+                  </span>
+                  <NotifyToggle
+                    target={{
+                      kind: "preorder_open",
+                      sourceId: edition.id,
+                      notifyDay: pacificDay(edition.preorder_start_at),
+                    }}
+                  />
+                </div>
+              )}
+              {edition.preorder_end_at && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-pink-400 w-28 shrink-0">
+                    Pre-order closes
+                  </span>
+                  <NotifyToggle
+                    target={{
+                      kind: "preorder_close",
+                      sourceId: edition.id,
+                      notifyDay: pacificDay(edition.preorder_end_at),
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

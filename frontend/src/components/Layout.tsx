@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useAlerts } from "../lib/alertsContext";
 import { SelectedDayContext } from "../lib/selectedDayContext";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -31,8 +32,29 @@ export function Layout() {
   // entries — push otherwise so the back button returns to the
   // page the user came from.
   const onFlashSales = location.pathname === "/flash-sales";
+  // A failed bell toggle has to be visible wherever it happened, and it
+  // has to out-rank everything else on screen — an error message that
+  // renders underneath an overlay is the same as no error message at
+  // all. z-[70] puts this above the floating button (z-50) and the
+  // holiday overlay (z-40).
+  const { error: alertError, clearError } = useAlerts();
   return (
     <div className="min-h-screen flex flex-col bg-black">
+      {alertError && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-[70] bg-red-950 border-b border-red-800 text-red-200 text-xs px-4 py-2 flex items-start justify-between gap-3"
+        >
+          <span>Notification setting didn't save: {alertError}</span>
+          <button
+            onClick={clearError}
+            aria-label="Dismiss"
+            className="text-red-300 hover:text-red-100 leading-none text-sm shrink-0"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <header className="border-b border-zinc-800 bg-black shadow-[0_2px_12px_rgba(255,255,255,0.06)]">
         <div className="max-w-5xl mx-auto px-4">
           {/* Top row: centered TomeKeeper wordmark — fiery silvery pink */}

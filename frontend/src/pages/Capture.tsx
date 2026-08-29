@@ -2,6 +2,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
+import { notifyDayLabel } from "../lib/alerts";
+import { useAlerts } from "../lib/alertsContext";
 import { post } from "../lib/api";
 import type { Edition, LibraryEntry, LibraryStatus, Work } from "../lib/types";
 
@@ -50,6 +52,8 @@ type Form = {
   condition: string;
   purchase_price: string;
   notes: string;
+  /** "Notify me on release day" — attached to the edition once it exists. */
+  notify_release: boolean;
 };
 
 const EMPTY: Form = {
@@ -69,6 +73,7 @@ const EMPTY: Form = {
   condition: "",
   purchase_price: "",
   notes: "",
+  notify_release: false,
 };
 
 const STATUS_OPTIONS: LibraryStatus[] = [
@@ -151,6 +156,7 @@ export function Capture() {
   const [form, setForm] = useState<Form>(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { turnOn } = useAlerts();
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -202,6 +208,17 @@ export function Capture() {
         buyer_info: null,
         notes: nullify(form.notes),
       });
+      // The alert can only be attached once the edition has an id, so it
+      // happens here rather than in the form. Non-fatal by design: the
+      // book is saved either way, and a failure surfaces in the global
+      // notification banner rather than eating the whole submission.
+      if (form.notify_release && form.release_date) {
+        await turnOn({
+          kind: "release",
+          sourceId: edition.id,
+          notifyDay: form.release_date,
+        });
+      }
       setForm(EMPTY);
       navigate(`/editions/${entry.edition_id}`);
     } catch (err: unknown) {
@@ -365,6 +382,26 @@ export function Capture() {
                 className={INPUT}
               />
             </Field>
+            {/* Only offered once there is a release date to fire on. */}
+            {form.release_date && (
+              <label className="col-span-2 flex items-start gap-2 text-xs text-pink-300 border border-zinc-800 bg-zinc-900/60 p-2">
+                <input
+                  type="checkbox"
+                  checked={form.notify_release}
+                  onChange={(e) => set("notify_release", e.target.checked)}
+                  className="accent-pink-500 mt-0.5"
+                />
+                <span>
+                  <span className="text-pink-200">
+                    Notify me on release day
+                  </span>
+                  <span className="block text-pink-500">
+                    A banner on your phone at 8 AM Pacific on{" "}
+                    {notifyDayLabel(form.release_date)}.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
           <Field label="ISBN">
             <input

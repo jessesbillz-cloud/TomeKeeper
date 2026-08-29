@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { HolidayTheme } from "../components/HolidayTheme";
+import { NotifySetup } from "../components/NotifySetup";
+import { NotifyToggle } from "../components/NotifyToggle";
 import { PhotoCaptureButton } from "../components/PhotoCaptureButton";
 import { ProcessingBanner } from "../components/ProcessingBanner";
 import { QRScanButton } from "../components/QRScanButton";
+import { calendarEventTarget, flashSaleTargetFor } from "../lib/alerts";
 import { get, patch } from "../lib/api";
 import { lookupIsbn } from "../lib/isbnLookup";
 import { useSelectedDay } from "../lib/selectedDayContext";
@@ -236,6 +239,12 @@ function SaleResultsList({
                     {s.notes}
                   </div>
                 )}
+                {/* Same bell as the calendar rows — a sale found by
+                    search or filter can be switched on without having to
+                    go find the day it sits on. */}
+                <div className="mt-1">
+                  <NotifyToggle target={flashSaleTargetFor(s)} />
+                </div>
                 {/* Outcome chips so she can see/mark whether she
                     bought from this sale, right from the results. */}
                 <div className="mt-1 flex flex-wrap gap-1.5">
@@ -679,12 +688,15 @@ export function Home() {
         </div>
       )}
 
-      {/* Calendar header row: month label + prev/today/next nav. The
-          calendar-subscribe surface used to live here; it has been
-          retired in favor of putting the day-action buttons in the
-          banner slot above the grid. */}
+      {/* Calendar header row: month label + phone-notification setup +
+          prev/today/next nav. */}
       <div className="flex items-center justify-between gap-2 mb-3">
-        <h1 className="text-base font-semibold text-pink-200">{monthLabel}</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-base font-semibold text-pink-200">
+            {monthLabel}
+          </h1>
+          <NotifySetup />
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
@@ -1262,6 +1274,14 @@ export function Home() {
                           the row's navigate-to-FlashSales behavior. We
                           only render for `flash_sale` rows that carry a
                           `flash_sale_id`; without an id we can't PATCH. */}
+                      {/* "Notify me about this" — on every event row,
+                          whatever its type. One tap = one phone banner at
+                          8 AM Pacific on the day the event lands. The
+                          button renders the date it will fire so she can
+                          see what she's getting before she taps. */}
+                      <div className="mt-1">
+                        <NotifyToggle target={calendarEventTarget(ev)} />
+                      </div>
                       {ev.type === "flash_sale" && ev.flash_sale_id && (
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           {STATUS_OPTIONS.map((opt) => {

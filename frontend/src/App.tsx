@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthGate } from "./components/AuthGate";
 import { Layout } from "./components/Layout";
+import { AlertsProvider } from "./lib/alertsContext";
 import { AuthProvider } from "./lib/auth";
 import { Assistant } from "./pages/Assistant";
 import { Capture } from "./pages/Capture";
@@ -16,6 +17,10 @@ export function App() {
   return (
     <AuthProvider>
       <AuthGate>
+        {/* Inside AuthGate so the first alerts fetch happens with a
+            session in hand, and above the router so every screen shares
+            one copy of which events have notifications switched on. */}
+        <AlertsProvider>
         <BrowserRouter basename="/TomeKeeper">
           <Routes>
             <Route element={<Layout />}>
@@ -34,6 +39,7 @@ export function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </AlertsProvider>
       </AuthGate>
     </AuthProvider>
   );

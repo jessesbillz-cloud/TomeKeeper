@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { NotifyToggle } from "../components/NotifyToggle";
+import { publisherSaleTargetFor } from "../lib/alerts";
+import { useAlerts } from "../lib/alertsContext";
 import { del, get, patch, post } from "../lib/api";
 import type { PublisherSalesEvent } from "../lib/types";
 
@@ -11,6 +14,8 @@ type Form = {
   starts_at: string;
   ends_at: string;
   notes: string;
+  /** "Notify me about this" — attached to the row as part of Save. */
+  notify: boolean;
 };
 
 const EMPTY: Form = {
@@ -20,6 +25,7 @@ const EMPTY: Form = {
   starts_at: "",
   ends_at: "",
   notes: "",
+  notify: false,
 };
 
 const INPUT_DARK =
@@ -65,6 +71,7 @@ export function PublisherSalesEvents() {
   const [adding, setAdding] = useState(Boolean(initialStarts));
   const [saving, setSaving] = useState(false);
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const { isOn, turnOn, toggle: toggleAlert } = useAlerts();
 
   async function load() {
     setLoading(true);
@@ -132,12 +139,14 @@ export function PublisherSalesEvents() {
         setEvents((prev) =>
           prev.map((s) => (s.id === editingId ? updated : s)),
         );
+        await syncNotify(updated);
       } else {
         const created = await post<PublisherSalesEvent>(
           "/publisher-sales-events",
           { ...payload, edition_id: null },
         );
         setEvents((prev) => [created, ...prev]);
+        await syncNotify(created);
       }
       setForm(EMPTY);
       setAdding(false);
@@ -149,6 +158,21 @@ export function PublisherSalesEvents() {
     }
   }
 
+  /**
+   * Reconcile the form's "Notify me" checkbox against the saved row.
+   * Runs after the save so a notification problem can never roll back
+   * the sale she just entered.
+   */
+  async function syncNotify(event: PublisherSalesEvent) {
+    const target = publisherSaleTargetFor(event);
+    const currentlyOn = isOn(target);
+    if (form.notify && !currentlyOn) {
+      await turnOn(target);
+    } else if (!form.notify && currentlyOn) {
+      await toggleAlert(target);
+    }
+  }
+
   function startEdit(s: PublisherSalesEvent) {
     setForm({
       publisher: s.publisher ?? "",
@@ -157,6 +181,7 @@ export function PublisherSalesEvents() {
       starts_at: fromISO(s.starts_at),
       ends_at: fromISO(s.ends_at),
       notes: s.notes ?? "",
+      notify: isOn(publisherSaleTargetFor(s)),
     });
     setEditingId(s.id);
     setAdding(true);
@@ -317,6 +342,21 @@ export function PublisherSalesEvents() {
               className={INPUT_DARK}
             />
           </label>
+          {/* Notify me — set while entering the sale, not afterwards. */}
+          <label className="col-span-2 flex items-start gap-2 text-xs text-pink-300 border border-zinc-800 bg-zinc-900/60 p-2">
+            <input
+              type="checkbox"
+              checked={form.notify}
+              onChange={(e) => setForm({ ...form, notify: e.target.checked })}
+              className="accent-pink-500 mt-0.5"
+            />
+            <span>
+              <span className="text-pink-200">Notify me about this</span>
+              <span className="block text-pink-500">
+                A banner on your phone at 8 AM Pacific on the day of the sale.
+              </span>
+            </span>
+          </label>
           <div className="col-span-2 flex gap-2">
             <button
               type="submit"
@@ -385,6 +425,10 @@ export function PublisherSalesEvents() {
                     {s.notes}
                   </div>
                 )}
+                {/* Bell — same control, same meaning, as on the calendar. */}
+                <div className="mt-1">
+                  <NotifyToggle target={publisherSaleTargetFor(s)} />
+                </div>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button
