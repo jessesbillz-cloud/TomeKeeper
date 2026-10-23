@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import {
   drawBat,
@@ -687,9 +687,8 @@ function HolidayCanvas({
  * Home-screen holiday theme: a banner strip plus the animated overlay.
  *
  * Which holiday is showing, and for how long, is decided entirely by
- * `lib/holidays.ts` — this component just renders whatever is active. The ×
- * dismisses the current occurrence only (keyed slug + year in localStorage),
- * so the theme returns for the next holiday and again next year.
+ * `lib/holidays.ts` — this component just renders whatever is active. There
+ * is deliberately no dismiss button: the theme stays up for its whole window.
  */
 export function HolidayTheme() {
   // Resolved once per mount. Holiday windows change at midnight, and the app
@@ -703,31 +702,23 @@ export function HolidayTheme() {
     return (preview ? holidayById(preview) : null) ?? activeHoliday();
   }, []);
 
-  const [dismissed, setDismissed] = useState<string | null>(() => {
+  // No dismiss button. The theme shows for its whole window, every time.
+  // Any dismissal stored by the old × button is cleared so it can't keep
+  // hiding this year's theme.
+  useEffect(() => {
     try {
-      return localStorage.getItem(DISMISS_KEY);
+      localStorage.removeItem(DISMISS_KEY);
     } catch {
-      // Private mode / storage disabled — just never persist a dismissal.
-      return null;
+      // Private mode / storage disabled — nothing to clear.
     }
-  });
+  }, []);
 
   const reducedMotion =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  if (!holiday || dismissed === holiday.key) return null;
-
-  function dismiss() {
-    if (!holiday) return;
-    try {
-      localStorage.setItem(DISMISS_KEY, holiday.key);
-    } catch {
-      // Ignore — the dismissal just won't survive a reload.
-    }
-    setDismissed(holiday.key);
-  }
+  if (!holiday) return null;
 
   const isHalloween = holiday.id === "halloween";
   // Halloween escalates over its two-week window; every other holiday has a
@@ -778,14 +769,6 @@ export function HolidayTheme() {
             holidayMessage(holiday)
           )}
         </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label={`Dismiss ${holiday.name} theme`}
-          className="text-base leading-none opacity-70 hover:opacity-100"
-        >
-          ×
-        </button>
       </div>
     </>
   );
