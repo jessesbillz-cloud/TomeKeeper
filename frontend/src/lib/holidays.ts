@@ -12,7 +12,16 @@
  * after Christmas, rather than lingering into the new year.
  *
  * To change how long something stays up, change its `tier` — nothing else.
+ * A holiday can instead pin its window with `days` (a fixed length) or
+ * `start` (a date the window opens on). That is how the fall–winter run is
+ * stitched together back to back: Veterans week → Thanksgiving → Christmas →
+ * New Year's, with no blank days in between.
  * To add a holiday, add a row to HOLIDAYS.
+ *
+ * STAGES: a holiday can list `stages`, so the scene builds over its window
+ * instead of looking the same every day (Halloween started this). Each stage
+ * says how many days out it begins; the scene module draws stage N however
+ * it likes, and the banner shows that stage's tagline.
  */
 
 export type HolidayTier = "major" | "medium" | "minor";
@@ -25,7 +34,9 @@ export type HolidayEffect =
   | "petals"
   | "leaves"
   | "bats"
-  | "confetti";
+  | "confetti"
+  // Hand-built staged scenes — see lib/scenes/.
+  | "veterans";
 
 /** Days the theme is visible, including the holiday itself. */
 export const TIER_DAYS: Record<HolidayTier, number> = {
@@ -33,6 +44,19 @@ export const TIER_DAYS: Record<HolidayTier, number> = {
   medium: 7,
   minor: 1,
 };
+
+/**
+ * One step of a holiday's build-up. `from` is how many days before the
+ * holiday this stage begins; it runs until the next stage takes over.
+ */
+export interface StageDef {
+  label: string;
+  from: number;
+  /** Banner line. A function gets the holiday's date (for "251st" etc). */
+  tagline: string | ((date: Date) => string);
+  /** Optional banner classes for this stage only (e.g. Marine Corps day). */
+  banner?: string;
+}
 
 interface HolidayDef {
   /** Stable slug. Combined with the year to key dismissals. */
@@ -47,6 +71,16 @@ interface HolidayDef {
   banner: string;
   /** Resolve this holiday's date within a given year, in LOCAL time. */
   date: (year: number) => Date;
+  /** Fixed window length in days (overrides the tier). */
+  days?: number;
+  /**
+   * The day the window opens, given the holiday's year (overrides `days` and
+   * the tier). Used where the start moves with another holiday — Christmas
+   * opens the day after Thanksgiving.
+   */
+  start?: (year: number) => Date;
+  /** Build-up stages, ordered far → near. */
+  stages?: readonly StageDef[];
 }
 
 // --- date helpers ----------------------------------------------------------
@@ -110,6 +144,52 @@ function easter(year: number): Date {
   const day = ((h + l - 7 * m + 114) % 31) + 1;
   return new Date(year, month - 1, day);
 }
+
+/** English ordinal: 1st, 2nd, 3rd, 11th, 251st… */
+export function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// Shared by the Thanksgiving / Christmas window edges.
+const thanksgivingDate = nthWeekday(11, 4, 4); // 4th Thursday of November
+
+/**
+ * Halloween's six stages. Populations for each stage live in
+ * HALLOWEEN_PHASES below; this is just the schedule and the banner lines.
+ */
+const HALLOWEEN_STAGES: readonly StageDef[] = [
+  { label: "moonrise", from: 13, tagline: "Something's stirring…" },
+  { label: "cobwebs", from: 10, tagline: "The cobwebs are going up…" },
+  { label: "fog", from: 7, tagline: "The fog is rolling in…" },
+  { label: "haunting", from: 4, tagline: "Something's shambling out of the fog…" },
+  { label: "swarm", from: 2, tagline: "The count has arrived…" },
+  { label: "all-hallows", from: 0, tagline: "Happy Halloween, Janelle!" },
+];
+
+/**
+ * Veterans week, Nov 4–11. The Marine Corps birthday (Nov 10) is its own
+ * stage the day before Veterans Day — Jesse is a Marine, so it's his.
+ */
+const VETERANS_STAGES: readonly StageDef[] = [
+  { label: "colors", from: 7, tagline: "Honoring those who served…" },
+  { label: "flag-line", from: 5, tagline: "The flags are going up…" },
+  { label: "fly-over", from: 3, tagline: "Fly-over inbound…" },
+  {
+    label: "marine-corps-birthday",
+    from: 1,
+    tagline: (d) =>
+      `Happy ${ordinal(d.getFullYear() - 1775)} birthday, Marines! Semper Fi, Jesse 🎂`,
+    banner:
+      "border-yellow-500 bg-gradient-to-r from-red-900/90 via-red-800/80 to-red-900/90 text-yellow-200",
+  },
+  {
+    label: "veterans-day",
+    from: 0,
+    tagline: "Thank you to all who served. Happy Veterans Day 🇺🇸",
+  },
+];
 
 // --- the calendar ----------------------------------------------------------
 
@@ -180,6 +260,20 @@ const HOLIDAYS: readonly HolidayDef[] = [
     effect: "bats",
     banner: "border-orange-500 bg-gradient-to-r from-orange-950/70 via-purple-950/60 to-orange-950/70 text-orange-100",
     date: fixed(10, 31),
+    stages: HALLOWEEN_STAGES,
+  },
+  {
+    // Veterans week: Nov 4–11. Marine Corps birthday is the Nov 10 stage.
+    id: "veterans",
+    name: "Veterans Day",
+    greeting: "Happy Veterans Day 🇺🇸",
+    tier: "medium",
+    days: 8,
+    effect: "veterans",
+    banner:
+      "border-sky-300 bg-gradient-to-r from-blue-950/80 via-slate-900/70 to-red-950/80 text-slate-100",
+    date: fixed(11, 11),
+    stages: VETERANS_STAGES,
   },
   {
     id: "thanksgiving",
@@ -188,7 +282,7 @@ const HOLIDAYS: readonly HolidayDef[] = [
     tier: "medium",
     effect: "leaves",
     banner: "border-amber-500 bg-amber-950/50 text-amber-100",
-    date: nthWeekday(11, 4, 4), // 4th Thursday of November
+    date: thanksgivingDate,
   },
   {
     id: "christmas",
@@ -200,6 +294,15 @@ const HOLIDAYS: readonly HolidayDef[] = [
     date: fixed(12, 25),
   },
 ];
+
+/** The stage a holiday is showing right now. */
+export interface ActiveStage {
+  index: number;
+  count: number;
+  label: string;
+  tagline: string;
+  banner?: string;
+}
 
 export interface ActiveHoliday {
   id: string;
@@ -218,6 +321,65 @@ export interface ActiveHoliday {
    * back for the next holiday, and again next year.
    */
   key: string;
+  /** Current build-up stage, or null for a holiday without stages. */
+  stage: ActiveStage | null;
+}
+
+/** First day of a holiday's window, for the occurrence on `date`. */
+function windowStart(def: HolidayDef, date: Date): Date {
+  if (def.start) return startOfDay(def.start(date.getFullYear()));
+  const days = def.days ?? TIER_DAYS[def.tier];
+  return addDays(date, -(days - 1));
+}
+
+function stageIndexFor(stages: readonly StageDef[], daysUntil: number): number {
+  let idx = 0;
+  for (let i = 0; i < stages.length; i++) {
+    if (daysUntil <= stages[i].from) idx = i;
+  }
+  return idx;
+}
+
+function resolveStage(
+  def: HolidayDef,
+  date: Date,
+  index: number,
+): ActiveStage | null {
+  const stages = def.stages;
+  if (!stages || stages.length === 0) return null;
+  const i = Math.min(stages.length - 1, Math.max(0, Math.floor(index)));
+  const st = stages[i];
+  return {
+    index: i,
+    count: stages.length,
+    label: st.label,
+    tagline: typeof st.tagline === "function" ? st.tagline(date) : st.tagline,
+    banner: st.banner,
+  };
+}
+
+function toActive(
+  def: HolidayDef,
+  date: Date,
+  daysUntil: number,
+  stageIndex: number | null,
+): ActiveHoliday {
+  return {
+    id: def.id,
+    name: def.name,
+    greeting: def.greeting,
+    tier: def.tier,
+    effect: def.effect,
+    banner: def.banner,
+    date,
+    daysUntil,
+    key: `${def.id}-${date.getFullYear()}`,
+    stage: resolveStage(
+      def,
+      date,
+      stageIndex ?? stageIndexFor(def.stages ?? [], daysUntil),
+    ),
+  };
 }
 
 /**
@@ -237,20 +399,9 @@ export function activeHoliday(now: Date = new Date()): ActiveHoliday | null {
   for (const def of HOLIDAYS) {
     for (const y of [year - 1, year, year + 1]) {
       const date = startOfDay(def.date(y));
-      const windowStart = addDays(date, -(TIER_DAYS[def.tier] - 1));
-      if (today < windowStart || today > date) continue;
+      if (today < windowStart(def, date) || today > date) continue;
 
-      const candidate: ActiveHoliday = {
-        id: def.id,
-        name: def.name,
-        greeting: def.greeting,
-        tier: def.tier,
-        effect: def.effect,
-        banner: def.banner,
-        date,
-        daysUntil: dayDiff(today, date),
-        key: `${def.id}-${date.getFullYear()}`,
-      };
+      const candidate = toActive(def, date, dayDiff(today, date), null);
 
       if (
         best === null ||
@@ -269,6 +420,7 @@ export function activeHoliday(now: Date = new Date()): ActiveHoliday | null {
 /**
  * Force-resolve a holiday by id, regardless of today's date — the nearest
  * occurrence, reported as if it were the holiday itself (daysUntil 0).
+ * `stage` pins a build-up stage (clamped); omitted means the final stage.
  *
  * This exists so the theme can be previewed out of season via `?holiday=<id>`
  * on the home screen; there is otherwise no way to look at the Christmas snow
@@ -277,21 +429,20 @@ export function activeHoliday(now: Date = new Date()): ActiveHoliday | null {
 export function holidayById(
   id: string,
   now: Date = new Date(),
+  stage: number | null = null,
 ): ActiveHoliday | null {
   const def = HOLIDAYS.find((h) => h.id === id);
   if (!def) return null;
   const date = startOfDay(def.date(now.getFullYear()));
-  return {
-    id: def.id,
-    name: def.name,
-    greeting: def.greeting,
-    tier: def.tier,
-    effect: def.effect,
-    banner: def.banner,
-    date,
-    daysUntil: 0,
-    key: `${def.id}-${date.getFullYear()}`,
-  };
+  // When previewing a stage, report the countdown that stage would show so
+  // the banner reads the way it will on the real day.
+  const stages = def.stages ?? [];
+  const pinned =
+    stage === null || stages.length === 0
+      ? null
+      : Math.min(stages.length - 1, Math.max(0, Math.floor(stage)));
+  const daysUntil = pinned === null ? 0 : stages[pinned].from;
+  return toActive(def, date, daysUntil, pinned);
 }
 
 /** Every holiday id, in calendar order. Handy for the preview param. */
