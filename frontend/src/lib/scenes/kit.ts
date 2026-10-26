@@ -175,3 +175,56 @@ export function stepDrifter(
   }
   return d.x + Math.sin(d.phase) * d.sway;
 }
+
+// One scratch canvas, reused (and only ever grown) for every soft layer.
+let scratch: HTMLCanvasElement | null = null;
+let scratchCtx: CanvasRenderingContext2D | null = null;
+
+/**
+ * Draw something at `alpha` as a single flat layer.
+ *
+ * Setting globalAlpha directly on a figure built from overlapping shapes
+ * (an arm over a coat, a flag drawn in slices) lets every overlap show
+ * through as a darker seam. Instead this draws the figure at full strength
+ * into a scratch canvas covering just the box (x, y, w, h), then fades the
+ * finished picture onto the scene in one go.
+ */
+export function softLayer(
+  ctx: CanvasRenderingContext2D,
+  alpha: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  draw: (g: CanvasRenderingContext2D) => void,
+) {
+  if (alpha >= 1 || w <= 0 || h <= 0) {
+    draw(ctx);
+    return;
+  }
+  const dpr = ctx.getTransform().a || 1;
+  const pw = Math.ceil(w * dpr);
+  const ph = Math.ceil(h * dpr);
+  if (!scratch) {
+    scratch = document.createElement("canvas");
+    scratchCtx = scratch.getContext("2d");
+  }
+  if (!scratchCtx) {
+    draw(ctx);
+    return;
+  }
+  if (scratch.width < pw || scratch.height < ph) {
+    scratch.width = Math.max(scratch.width, pw);
+    scratch.height = Math.max(scratch.height, ph);
+  }
+  const g = scratchCtx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1;
+  g.clearRect(0, 0, pw, ph);
+  g.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
+  draw(g);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(scratch, 0, 0, pw, ph, x, y, w, h);
+  ctx.restore();
+}
