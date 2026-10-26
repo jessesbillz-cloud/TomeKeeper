@@ -19,7 +19,7 @@
 export const INK = "#120d06";
 
 /** Fill the current path, then stroke it with the cartoon outline. */
-function inked(
+export function inked(
   ctx: CanvasRenderingContext2D,
   fill: string,
   lw: number,
@@ -33,7 +33,7 @@ function inked(
 }
 
 /** Rounded-rect PATH only — callers decide how to paint it. */
-function rrPath(
+export function rrPath(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,

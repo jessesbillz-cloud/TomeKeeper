@@ -8,9 +8,9 @@ import {
   drawMummy,
   drawWitch,
 } from "../lib/spooky";
+import { SCENES } from "../lib/scenes";
 import {
   activeHoliday,
-  halloweenPhase,
   halloweenPhaseAt,
   holidayById,
   holidayMessage,
@@ -136,10 +136,13 @@ interface Spider {
 function HolidayCanvas({
   effect,
   phase,
+  stage,
 }: {
   effect: HolidayEffect;
   /** Halloween only — which stage of the two-week build-up to render. */
   phase: HalloweenPhase | null;
+  /** Build-up stage for the hand-built scenes in lib/scenes. */
+  stage: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -164,6 +167,10 @@ function HolidayCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     resize();
+
+    // Hand-built staged scenes (Veterans week, …) draw themselves.
+    const makeScene = SCENES[effect];
+    const scene = makeScene ? makeScene(ctx, stage) : null;
 
     const glyphs = DRIFT_GLYPHS[effect];
     const isDrift = Boolean(glyphs);
@@ -591,7 +598,9 @@ function HolidayCanvas({
       elapsed += dt;
       ctx.clearRect(0, 0, width, height);
 
-      if (isHalloween) {
+      if (scene) {
+        scene.frame(dt, elapsed, width, height);
+      } else if (isHalloween) {
         runHalloween(dt, elapsed);
       } else if (effect === "fireworks") {
         nextBurst -= dt;
@@ -672,7 +681,7 @@ function HolidayCanvas({
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [effect, phase]);
+  }, [effect, phase, stage]);
 
   return (
     <canvas
@@ -695,11 +704,20 @@ export function HolidayTheme() {
   // is a PWA people reopen constantly, so there's no reason to poll.
   //
   // `?holiday=<id>` force-shows one out of season so the theme can be checked
-  // in July. An unknown id falls through to the real calendar, so a junk
-  // param can't blank the screen.
+  // in July, and `&stage=N` pins one stage of its build-up. An unknown id
+  // falls through to the real calendar, so a junk param can't blank the
+  // screen. `?stage=N` on its own pins a stage of whatever is showing.
   const holiday = useMemo<ActiveHoliday | null>(() => {
-    const preview = new URLSearchParams(window.location.search).get("holiday");
-    return (preview ? holidayById(preview) : null) ?? activeHoliday();
+    const params = new URLSearchParams(window.location.search);
+    const preview = params.get("holiday");
+    const raw = params.get("stage");
+    const stage =
+      raw !== null && raw.trim() !== "" && !isNaN(Number(raw))
+        ? Number(raw)
+        : null;
+    const live = activeHoliday();
+    const id = preview ?? (stage !== null ? live?.id : null);
+    return (id ? holidayById(id, new Date(), stage) : null) ?? live;
   }, []);
 
   // No dismiss button. The theme shows for its whole window, every time.
@@ -721,27 +739,25 @@ export function HolidayTheme() {
   if (!holiday) return null;
 
   const isHalloween = holiday.id === "halloween";
-  // Halloween escalates over its two-week window; every other holiday has a
-  // single look, so `phase` stays null for them.
-  // `?stage=N` pins a specific stage for previewing; otherwise the stage
-  // falls out of how many days are left.
-  const stageParam = new URLSearchParams(window.location.search).get("stage");
-  const phase = !isHalloween
-    ? null
-    : stageParam !== null && stageParam.trim() !== "" && !isNaN(Number(stageParam))
-      ? halloweenPhaseAt(Number(stageParam))
-      : halloweenPhase(holiday.daysUntil);
+  const stage = holiday.stage;
+  // Halloween's populations still come from its own phase table; the stage
+  // (from the calendar, or pinned by `?stage=N`) picks the row.
+  const phase = isHalloween ? halloweenPhaseAt(stage?.index ?? 0) : null;
 
   return (
     <>
       {!reducedMotion && (
-        <HolidayCanvas effect={holiday.effect} phase={phase} />
+        <HolidayCanvas
+          effect={holiday.effect}
+          phase={phase}
+          stage={stage?.index ?? 0}
+        />
       )}
       <div
         role="status"
         className={[
           "relative z-40 mb-3 flex items-center gap-2 border px-3 py-2 text-sm",
-          holiday.banner,
+          stage?.banner ?? holiday.banner,
           // Halloween gets the guttering-candle treatment on the banner text
           // to match the scene behind it. Suppressed under reduced-motion.
           isHalloween && !reducedMotion ? "halloween-banner" : "",
@@ -753,17 +769,17 @@ export function HolidayTheme() {
             isHalloween ? "tracking-wide" : "",
           ].join(" ")}
         >
-          {isHalloween && phase ? (
+          {stage ? (
             <>
-              <span aria-hidden>🎃 </span>
-              {phase.tagline}
+              {isHalloween && <span aria-hidden>🎃 </span>}
+              {stage.tagline}
               {holiday.daysUntil > 0 && (
                 <span className="opacity-80">
                   {" "}
                   {holidayMessage(holiday)}
                 </span>
               )}
-              <span aria-hidden> 🦇</span>
+              {isHalloween && <span aria-hidden> 🦇</span>}
             </>
           ) : (
             holidayMessage(holiday)
