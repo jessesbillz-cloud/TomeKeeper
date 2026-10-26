@@ -508,6 +508,8 @@ export function drawBunting(
   w: number,
   t: number,
   colors: { body: string; edge: string; rosette: string; center: string },
+  /** Scales how far the swags hang and the rosette size. */
+  size = 1,
 ) {
   const runs: Array<[number, number]> = [
     [0, w * 0.33],
@@ -518,7 +520,7 @@ export function drawBunting(
     const runW = r1 - r0;
     const n = Math.max(1, Math.round(runW / 75));
     const span = runW / n;
-    const depth = Math.min(22, span * 0.3);
+    const depth = Math.min(22, span * 0.3) * size;
     for (let i = 0; i < n; i++, k++) {
       const x0 = r0 + i * span;
       const x1 = x0 + span;
@@ -552,7 +554,7 @@ export function drawBunting(
     // Rosettes at the joins (and both ends of the run).
     for (let i = 0; i <= n; i++) {
       const rx = r0 + i * span;
-      const r = Math.min(8, span * 0.1);
+      const r = Math.min(8, span * 0.1) * Math.max(0.6, size);
       ctx.beginPath();
       ctx.arc(rx, 3, r, 0, Math.PI * 2);
       inked(ctx, colors.rosette, 1.3);

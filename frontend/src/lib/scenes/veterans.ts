@@ -22,6 +22,7 @@ import {
   ease,
   groundY,
   rand,
+  softLayer,
   spawnDrifter,
   stepDrifter,
   trimFor,
@@ -42,6 +43,24 @@ import {
 const STAR_COLORS = ["#f8fafc", "#e2e8f0", "#fde68a"];
 const MARINE_CONFETTI = [SCARLET, GOLD, GOLD, "#b91c1c", "#fbbf24"];
 const TRAILS = ["239, 68, 68", "248, 250, 252", "59, 130, 246"];
+
+/**
+ * How strongly each layer shows. Jesse's call after the first preview: keep
+ * it in the background — Janelle still has to read the calendar and hit her
+ * buttons through it — so everything is small and partly see-through, with
+ * the big flag softened the most.
+ */
+const SOFT = {
+  flag: 0.62,
+  flagLine: 0.62,
+  stars: 0.6,
+  confetti: 0.6,
+  jets: 0.75,
+  trails: 0.28,
+  eagle: 0.7,
+  bunting: 0.7,
+  figures: 0.9,
+};
 
 interface Pass {
   x: number;
@@ -91,23 +110,23 @@ export function createVeteransScene(
     W = w;
     H = h;
     const trim = trimFor(w);
-    mainFlag = makeFlag(Math.max(84, Math.min(140, w * 0.24)));
-    lineFlag = makeFlag(w < 480 ? 24 : 30);
-    const n = Math.max(5, Math.min(16, Math.round(w / 44)));
+    mainFlag = makeFlag(Math.max(60, Math.min(96, w * 0.18)));
+    lineFlag = makeFlag(w < 480 ? 18 : 22);
+    const n = Math.max(4, Math.min(10, Math.round(w / 70)));
     lineSeeds = Array.from({ length: n }, () => Math.random() * 6);
     drift = marineDay
-      ? Array.from({ length: trim(28) }, () =>
-          spawnDrifter(w, h, true, MARINE_CONFETTI, [7, 12], [26, 60], 2),
+      ? Array.from({ length: trim(14) }, () =>
+          spawnDrifter(w, h, true, MARINE_CONFETTI, [5, 9], [22, 48], 2),
         )
-      : Array.from({ length: trim([10, 14, 16, 0, 22][stage] ?? 12) }, () =>
-          spawnDrifter(w, h, true, STAR_COLORS, [2.5, 6], [8, 22]),
+      : Array.from({ length: trim([6, 8, 8, 0, 10][stage] ?? 8) }, () =>
+          spawnDrifter(w, h, true, STAR_COLORS, [2, 4.5], [8, 20]),
         );
   }
 
   /** The first eagle starts already in the sky so it's seen right away. */
   function spawnEagle(initial = false): Eagle {
     const dir = initial ? 1 : Math.random() < 0.5 ? 1 : -1;
-    const size = Math.max(70, Math.min(120, W * 0.2));
+    const size = Math.max(48, Math.min(76, W * 0.14));
     return {
       x: initial ? W * 0.18 : dir === 1 ? -size : W + size,
       y: H * rand(0.26, 0.4),
@@ -121,23 +140,28 @@ export function createVeteransScene(
     if (!lineFlag) return;
     const g = H - 6;
     const n = lineSeeds.length;
-    const stick = lineFlag.height + 20;
-    for (let i = 0; i < n; i++) {
-      const x = ((i + 0.5) / n) * W - lineFlag.width * 0.3;
-      ctx.fillStyle = "#cbd5e1";
-      ctx.fillRect(x - 0.8, g - stick, 1.6, stick);
-      ctx.fillStyle = "#fde68a";
-      ctx.beginPath();
-      ctx.arc(x, g - stick - 1.5, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-      lineFlag.draw(ctx, x + 0.8, g - stick, t * 1.1, lineSeeds[i], 1.3);
-    }
+    const stick = lineFlag.height + 12;
+    // Stop short of the "+ Sale" button in the bottom-right corner.
+    const span = Math.max(120, W - 96);
+    const lf = lineFlag;
+    softLayer(ctx, SOFT.flagLine, 0, g - stick - 8, W, stick + 10, (c) => {
+      for (let i = 0; i < n; i++) {
+        const x = ((i + 0.5) / n) * span - lf.width * 0.3;
+        c.fillStyle = "#cbd5e1";
+        c.fillRect(x - 0.8, g - stick, 1.6, stick);
+        c.fillStyle = "#fde68a";
+        c.beginPath();
+        c.arc(x, g - stick - 1.5, 1.8, 0, Math.PI * 2);
+        c.fill();
+        lf.draw(c, x + 0.8, g - stick, t * 1.1, lineSeeds[i], 1.3);
+      }
+    });
   }
 
   function drawPass(dt: number, t: number) {
     nextPass -= dt;
     if (!pass && nextPass <= 0) {
-      const len = Math.max(26, Math.min(40, W * 0.075));
+      const len = Math.max(18, Math.min(26, W * 0.055));
       pass = { x: -len * 2, y: H * rand(0.18, 0.26), len };
     }
     if (!pass) return;
@@ -149,7 +173,7 @@ export function createVeteransScene(
       [-1.15 * L, -0.55 * L],
       [-1.15 * L, 0.55 * L],
     ];
-    const trailLen = Math.max(220, W * 0.6);
+    const trailLen = Math.max(140, W * 0.4);
     for (let i = 0; i < ships.length; i++) {
       const sx = pass.x + ships[i][0];
       const sy = pass.y + ships[i][1];
@@ -157,10 +181,10 @@ export function createVeteransScene(
       const from = tail - trailLen;
       const grad = ctx.createLinearGradient(from, 0, tail, 0);
       grad.addColorStop(0, `rgba(${TRAILS[i]}, 0)`);
-      grad.addColorStop(1, `rgba(${TRAILS[i]}, 0.55)`);
+      grad.addColorStop(1, `rgba(${TRAILS[i]}, ${SOFT.trails})`);
       ctx.strokeStyle = grad;
       ctx.lineCap = "round";
-      ctx.lineWidth = Math.max(4, L * 0.16);
+      ctx.lineWidth = Math.max(2.5, L * 0.12);
       ctx.beginPath();
       for (let k = 0; k <= 16; k++) {
         const px = from + (trailLen * k) / 16;
@@ -171,12 +195,16 @@ export function createVeteransScene(
       }
       ctx.stroke();
     }
-    for (let i = 0; i < ships.length; i++) {
-      drawJet(ctx, pass.x + ships[i][0], pass.y + ships[i][1], L, 1, t + i);
-    }
+    const px = pass.x;
+    const py = pass.y;
+    softLayer(ctx, SOFT.jets, px - 2 * L, py - L, 3 * L, 2 * L, (c) => {
+      for (let i = 0; i < ships.length; i++) {
+        drawJet(c, px + ships[i][0], py + ships[i][1], L, 1, t + i);
+      }
+    });
     if (pass.x - 1.7 * L - trailLen > W) {
       pass = null;
-      nextPass = rand(14, 20);
+      nextPass = rand(25, 35);
     }
   }
 
@@ -192,7 +220,7 @@ export function createVeteransScene(
           ctx.save();
           ctx.translate(x, d.y);
           ctx.rotate(d.angle);
-          ctx.globalAlpha = 0.9;
+          ctx.globalAlpha = SOFT.confetti;
           ctx.fillStyle = d.color;
           if (d.kind === 0) {
             ctx.fillRect(-d.size / 2, -d.size / 5, d.size, d.size / 2.5);
@@ -204,7 +232,7 @@ export function createVeteransScene(
           ctx.restore();
         } else {
           const tw = 0.45 + 0.4 * Math.sin(t * 2.2 + d.phase * 3);
-          drawDriftStar(ctx, x, d.y, d.size, d.angle, d.color, tw);
+          drawDriftStar(ctx, x, d.y, d.size, d.angle, d.color, tw * SOFT.stars);
         }
       }
 
@@ -216,15 +244,11 @@ export function createVeteransScene(
         }
         if (eagle) {
           eagle.x += eagle.vx * dt;
-          const bob = Math.sin(t * 0.7 + eagle.seed) * 10;
-          drawEagle(
-            ctx,
-            eagle.x,
-            eagle.y + bob,
-            eagle.size,
-            eagle.vx < 0 ? -1 : 1,
-            t,
-            eagle.seed,
+          const bob = Math.sin(t * 0.7 + eagle.seed) * 6;
+          const e = eagle;
+          const S = e.size;
+          softLayer(ctx, SOFT.eagle, e.x - S * 0.6, e.y + bob - S * 0.75, S * 1.2, S, (c) =>
+            drawEagle(c, e.x, e.y + bob, S, e.vx < 0 ? -1 : 1, t, e.seed),
           );
           if (eagle.x < -eagle.size * 1.5 || eagle.x > w + eagle.size * 1.5) {
             eagle = null;
@@ -236,12 +260,15 @@ export function createVeteransScene(
       if (showJets) drawPass(dt, t);
 
       if (marineDay) {
-        drawBunting(ctx, w, t, {
-          body: SCARLET,
-          edge: GOLD,
-          rosette: GOLD,
-          center: SCARLET,
-        });
+        softLayer(ctx, SOFT.bunting, 0, 0, w, 40, (c) =>
+          drawBunting(
+            c,
+            w,
+            t,
+            { body: SCARLET, edge: GOLD, rosette: GOLD, center: SCARLET },
+            0.65,
+          ),
+        );
       }
 
       if (showMainFlag && mainFlag) {
@@ -250,36 +277,43 @@ export function createVeteransScene(
         const poleTop = 14;
         const raise = ease(t / 2.8);
         const restY = poleTop + 2;
-        const startY = restY + 130;
+        const startY = restY + 60;
         const fy = startY + (restY - startY) * raise;
-        drawPole(ctx, poleX, poleTop, mainFlag.height + 90);
-        ctx.globalAlpha = 0.94;
-        mainFlag.draw(ctx, poleX + 1.6, fy, t, 0, 0.6 + 0.4 * raise);
-        ctx.globalAlpha = 1;
+        const mf = mainFlag;
+        softLayer(ctx, SOFT.flag, 0, 0, poleX + mf.width + 12, poleTop + mf.height + 110, (c) => {
+          drawPole(c, poleX, poleTop, mf.height + 40);
+          mf.draw(c, poleX + 1.6, fy, t, 0, 0.6 + 0.4 * raise);
+        });
       }
 
       if (showFlagLine) drawFlagLine(t);
 
       if (showMarine) {
-        const mh = Math.max(68, Math.min(100, h * 0.115));
+        const mh = Math.max(54, Math.min(76, h * 0.088));
         // Marine day: beside the cake. Veterans Day: in front of the flag
         // line, on the same ground as the flag sticks.
         const mx = marineDay ? w * 0.2 : Math.max(40, w * 0.13);
         const my = marineDay ? ground + 6 : h - 6;
         // Settles into the salute shortly after the screen opens.
-        drawMarine(ctx, mx, my, mh, t, ease((t - 0.6) / 0.9));
+        softLayer(ctx, SOFT.figures, mx - mh * 0.4, my - mh * 1.15, mh * 0.8, mh * 1.2, (c) =>
+          drawMarine(c, mx, my, mh, t, ease((t - 0.6) / 0.9)),
+        );
       }
 
       if (marineDay) {
-        const cw = Math.max(92, Math.min(140, w * 0.27));
-        drawBirthdayCake(ctx, w * 0.47, ground + 6, cw, t, age);
+        const cw = Math.max(70, Math.min(100, w * 0.21));
+        const cx = w * 0.42;
+        const cy = ground + 6;
+        softLayer(ctx, SOFT.figures, cx - cw * 0.8, cy - cw * 1.25, cw * 1.6, cw * 1.3, (c) =>
+          drawBirthdayCake(c, cx, cy, cw, t, age),
+        );
       }
 
       // Edge glow: a slow scarlet pulse on the Marine day, cool blue otherwise.
       if (marineDay) {
-        vignette(ctx, w, h, "200, 16, 46", 0.1 + 0.04 * Math.sin(t * 1.6));
+        vignette(ctx, w, h, "200, 16, 46", 0.06 + 0.02 * Math.sin(t * 1.6));
       } else {
-        vignette(ctx, w, h, "59, 130, 246", 0.06 + 0.02 * Math.sin(t * 1.2));
+        vignette(ctx, w, h, "59, 130, 246", 0.04 + 0.015 * Math.sin(t * 1.2));
       }
     },
   };
