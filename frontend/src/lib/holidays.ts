@@ -36,7 +36,15 @@ export type HolidayEffect =
   | "bats"
   | "confetti"
   // Hand-built staged scenes — see lib/scenes/.
-  | "veterans";
+  | "veterans"
+  | "thanksgiving"
+  | "christmas"
+  | "new-year"
+  | "valentines"
+  | "birthday"
+  | "st-patricks"
+  | "easter"
+  | "fourth";
 
 /** Days the theme is visible, including the holiday itself. */
 export const TIER_DAYS: Record<HolidayTier, number> = {
@@ -191,6 +199,75 @@ const VETERANS_STAGES: readonly StageDef[] = [
   },
 ];
 
+/** Thanksgiving, Nov 12 → the 4th Thursday (14–17 days depending on year). */
+const THANKSGIVING_STAGES: readonly StageDef[] = [
+  { label: "first-leaves", from: 14, tagline: "The leaves are turning…" },
+  { label: "harvest", from: 10, tagline: "Bringing in the harvest…" },
+  { label: "turkey-trot", from: 6, tagline: "Something's gobbling out there…" },
+  { label: "pies", from: 2, tagline: "The pies are in the oven…" },
+  { label: "thanksgiving", from: 0, tagline: "Happy Thanksgiving, Janelle! 🦃" },
+];
+
+/** Christmas, the day after Thanksgiving → Dec 25 (~4 weeks). */
+const CHRISTMAS_STAGES: readonly StageDef[] = [
+  { label: "first-snow", from: 28, tagline: "The first snow is falling…" },
+  { label: "lights", from: 22, tagline: "The lights are going up…" },
+  { label: "tree", from: 17, tagline: "The tree is up…" },
+  { label: "snowman", from: 12, tagline: "Somebody's building a snowman…" },
+  { label: "trimming", from: 7, tagline: "Trimming the tree…" },
+  { label: "reindeer", from: 3, tagline: "Reindeer spotted overhead…" },
+  { label: "christmas-eve", from: 1, tagline: "'Twas the night before Christmas…" },
+  { label: "christmas", from: 0, tagline: "Merry Christmas, Janelle! 🎄" },
+];
+
+/** New Year's, Dec 26 → Jan 1. Dec 31 is its own stage. */
+const NEW_YEAR_STAGES: readonly StageDef[] = [
+  { label: "sparkle", from: 6, tagline: "Out with the old…" },
+  { label: "warm-up", from: 3, tagline: "The fireworks are warming up…" },
+  { label: "new-years-eve", from: 1, tagline: "Last night of the year! 🥂" },
+  {
+    label: "new-year",
+    from: 0,
+    tagline: (d) => `Happy New Year, Janelle! Welcome to ${d.getFullYear()} 🎆`,
+  },
+];
+
+/** Valentine's, Feb 8 → 14. */
+const VALENTINES_STAGES: readonly StageDef[] = [
+  { label: "hearts", from: 6, tagline: "Love is in the air…" },
+  { label: "love-letters", from: 3, tagline: "Love letters incoming…" },
+  { label: "valentines", from: 0, tagline: "Happy Valentine's Day, Janelle 💗" },
+];
+
+/** Janelle's birthday — a two-week build, Feb 27 → Mar 12. */
+const BIRTHDAY_STAGES: readonly StageDef[] = [
+  { label: "balloons", from: 13, tagline: "Something's coming up…" },
+  { label: "bunting", from: 9, tagline: "The party prep has started…" },
+  { label: "presents", from: 5, tagline: "Presents are piling up…" },
+  { label: "cake", from: 2, tagline: "The cake is ready…" },
+  { label: "birthday", from: 0, tagline: "Happy Birthday, Janelle! 🎂" },
+];
+
+/** St. Patrick's, Mar 15 → 17. */
+const ST_PATRICKS_STAGES: readonly StageDef[] = [
+  { label: "lucky", from: 2, tagline: "Feeling lucky…" },
+  { label: "st-patricks", from: 0, tagline: "Happy St. Patrick's Day ☘️" },
+];
+
+/** Easter week. */
+const EASTER_STAGES: readonly StageDef[] = [
+  { label: "blooms", from: 6, tagline: "Spring is blooming…" },
+  { label: "egg-hunt", from: 3, tagline: "The egg hunt is on…" },
+  { label: "easter", from: 0, tagline: "Happy Easter, Janelle 🌷" },
+];
+
+/** The 4th, Jun 28 → Jul 4. */
+const FOURTH_STAGES: readonly StageDef[] = [
+  { label: "bunting", from: 6, tagline: "Red, white and blue…" },
+  { label: "sparklers", from: 3, tagline: "Sparklers are out…" },
+  { label: "fourth", from: 0, tagline: "Happy 4th of July! 🎆" },
+];
+
 // --- the calendar ----------------------------------------------------------
 
 const HOLIDAYS: readonly HolidayDef[] = [
@@ -199,18 +276,20 @@ const HOLIDAYS: readonly HolidayDef[] = [
     name: "New Year's",
     greeting: "Happy New Year!",
     tier: "medium",
-    effect: "fireworks",
-    banner: "border-amber-400 bg-amber-950/50 text-amber-100",
+    effect: "new-year",
+    banner: "border-amber-400 bg-gradient-to-r from-amber-950/70 via-zinc-900/70 to-amber-950/70 text-amber-100",
     date: fixed(1, 1),
+    stages: NEW_YEAR_STAGES,
   },
   {
     id: "valentines",
     name: "Valentine's Day",
     greeting: "Happy Valentine's Day 💗",
     tier: "medium",
-    effect: "hearts",
+    effect: "valentines",
     banner: "border-rose-400 bg-rose-950/50 text-rose-100",
     date: fixed(2, 14),
+    stages: VALENTINES_STAGES,
   },
   {
     // Janelle's birthday. Gets its own confetti effect and outranks any
@@ -218,37 +297,42 @@ const HOLIDAYS: readonly HolidayDef[] = [
     id: "janelle-birthday",
     name: "Janelle's birthday",
     greeting: "Happy birthday, Janelle! 🎂",
-    tier: "medium",
-    effect: "confetti",
-    banner: "border-fuchsia-400 bg-fuchsia-950/50 text-fuchsia-100",
+    tier: "major",
+    effect: "birthday",
+    banner: "border-fuchsia-400 bg-gradient-to-r from-fuchsia-950/70 via-pink-950/60 to-fuchsia-950/70 text-fuchsia-100",
     date: fixed(3, 12),
+    stages: BIRTHDAY_STAGES,
   },
   {
     id: "st-patricks",
     name: "St. Patrick's Day",
     greeting: "Happy St. Patrick's Day ☘️",
     tier: "minor",
-    effect: "shamrocks",
+    days: 3,
+    effect: "st-patricks",
     banner: "border-emerald-400 bg-emerald-950/50 text-emerald-100",
     date: fixed(3, 17),
+    stages: ST_PATRICKS_STAGES,
   },
   {
     id: "easter",
     name: "Easter",
     greeting: "Happy Easter 🌷",
     tier: "medium",
-    effect: "petals",
+    effect: "easter",
     banner: "border-violet-400 bg-violet-950/50 text-violet-100",
     date: easter,
+    stages: EASTER_STAGES,
   },
   {
     id: "independence-day",
     name: "the 4th",
     greeting: "Happy 4th of July 🎆",
     tier: "medium",
-    effect: "fireworks",
-    banner: "border-sky-400 bg-sky-950/50 text-sky-100",
+    effect: "fourth",
+    banner: "border-sky-400 bg-gradient-to-r from-blue-950/70 via-slate-900/60 to-red-950/70 text-sky-100",
     date: fixed(7, 4),
+    stages: FOURTH_STAGES,
   },
   {
     id: "halloween",
@@ -279,19 +363,25 @@ const HOLIDAYS: readonly HolidayDef[] = [
     id: "thanksgiving",
     name: "Thanksgiving",
     greeting: "Happy Thanksgiving 🍂",
-    tier: "medium",
-    effect: "leaves",
-    banner: "border-amber-500 bg-amber-950/50 text-amber-100",
+    tier: "major",
+    // Opens the day after Veterans Day so there's no blank day between.
+    start: fixed(11, 12),
+    effect: "thanksgiving",
+    banner: "border-amber-500 bg-gradient-to-r from-amber-950/70 via-orange-950/60 to-amber-950/70 text-amber-100",
     date: thanksgivingDate,
+    stages: THANKSGIVING_STAGES,
   },
   {
     id: "christmas",
     name: "Christmas",
     greeting: "Merry Christmas 🎄",
     tier: "major",
-    effect: "snow",
-    banner: "border-red-400 bg-red-950/50 text-red-100",
+    // Opens the day after Thanksgiving — the whole season, not two weeks.
+    start: (y) => addDays(thanksgivingDate(y), 1),
+    effect: "christmas",
+    banner: "border-red-400 bg-gradient-to-r from-red-950/70 via-emerald-950/60 to-red-950/70 text-red-100",
     date: fixed(12, 25),
+    stages: CHRISTMAS_STAGES,
   },
 ];
 
