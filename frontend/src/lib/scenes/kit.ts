@@ -8,6 +8,24 @@
  * Style follows the Halloween cast in ../spooky.ts: heavy INK outlines, flat
  * fills, no emoji, no images — everything canvas primitives so it is crisp
  * at any size and looks the same on every phone.
+ *
+ * DESIGN RULES (Jesse, after the first Veterans preview: "soften it up —
+ * she still has to push her buttons"). Every scene sits in the BACKGROUND:
+ *  - Small figures, partly see-through. Fade figures as one piece with
+ *    `softLayer` at roughly 0.5–0.9 (big/central things lowest), never by
+ *    setting globalAlpha on a figure made of overlapping shapes.
+ *  - Keep the middle of the screen (the calendar) mostly clear: ambient bits
+ *    (snow, leaves, hearts) are sparse and faint; anything solid lives on the
+ *    edges — top corners, the bottom strip, or a quick pass across the sky.
+ *  - Leave the app title (top centre) readable and keep solid things out of
+ *    the bottom-right ~100×100 where the "+ Sale" button sits.
+ *  - Phones: populations trimmed with `trimFor`; sizes scale off w/h with
+ *    clamps, never fixed big numbers.
+ *  - Stages ADD to each other so the screen visibly builds toward the day,
+ *    and the day itself is the fullest — but still background-level.
+ *  - No trademarked characters or marks (no Rudolph's glowing nose, no
+ *    Frosty, no branded mascots or emblems). Generic Santa, reindeer,
+ *    snowman, cupid, bunny, leprechaun are fine.
  */
 
 export { INK, inked, rrPath } from "../spooky";
@@ -220,7 +238,10 @@ export function softLayer(
   const g = scratchCtx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalAlpha = 1;
-  g.clearRect(0, 0, pw, ph);
+  // Clear a pixel past the box: drawImage smooths across the box edge, and
+  // anything left over from an earlier, bigger layer would show as a faint
+  // outline around the figure.
+  g.clearRect(0, 0, Math.min(scratch.width, pw + 2), Math.min(scratch.height, ph + 2));
   g.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
   draw(g);
   ctx.save();
