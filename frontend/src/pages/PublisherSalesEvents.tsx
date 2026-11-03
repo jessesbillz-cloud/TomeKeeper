@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { NotifyToggle } from "../components/NotifyToggle";
 import { publisherSaleTargetFor } from "../lib/alerts";
 import { useAlerts } from "../lib/alertsContext";
-import { del, get, patch, post } from "../lib/api";
+import { del, get, getAll, patch, post } from "../lib/api";
 import type { PublisherSalesEvent } from "../lib/types";
 
 type Form = {
@@ -78,9 +78,9 @@ export function PublisherSalesEvents() {
     setError(null);
     try {
       const path = showActiveOnly
-        ? "/publisher-sales-events?active_only=true&limit=200"
-        : "/publisher-sales-events?limit=200";
-      const data = await get<PublisherSalesEvent[]>(path);
+        ? "/publisher-sales-events?active_only=true"
+        : "/publisher-sales-events";
+      const data = await getAll<PublisherSalesEvent>(path);
       setEvents(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));

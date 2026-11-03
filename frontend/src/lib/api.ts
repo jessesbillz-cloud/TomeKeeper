@@ -109,6 +109,30 @@ export async function api<T>(
 
 // Sugar for the common verbs.
 export const get = <T>(path: string) => api<T>(path);
+
+/**
+ * GET every row of a list endpoint, a page at a time.
+ *
+ * The list functions return at most `limit` rows, oldest first. A single
+ * `?limit=200` call silently dropped the NEWEST rows once Janelle passed 200
+ * flash sales (Nov 2026: 214 rows, every upcoming pre-order missing from the
+ * Flash Sales screen). Paging until a short page comes back means a list can
+ * never quietly lose its newest entries again, however long it grows.
+ */
+export async function getAll<T>(path: string, pageSize = 500): Promise<T[]> {
+  const sep = path.includes("?") ? "&" : "?";
+  const out: T[] = [];
+  // Hard stop at 40 pages (20,000 rows) so a misbehaving endpoint that
+  // ignores `offset` can't loop forever.
+  for (let page = 0; page < 40; page++) {
+    const rows = await api<T[]>(
+      `${path}${sep}limit=${pageSize}&offset=${page * pageSize}`,
+    );
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return out;
+}
 export const post = <T>(path: string, payload: unknown) =>
   api<T>(path, { method: "POST", body: JSON.stringify(payload) });
 export const patch = <T>(path: string, payload: unknown) =>

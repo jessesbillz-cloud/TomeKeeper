@@ -10,7 +10,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { HolidayTheme } from "../components/HolidayTheme";
 import { NotifyToggle } from "../components/NotifyToggle";
 import { calendarEventTarget, flashSaleTargetFor } from "../lib/alerts";
-import { get, patch } from "../lib/api";
+import { get, getAll, patch } from "../lib/api";
 import { useSelectedDay } from "../lib/selectedDayContext";
 import type { CalendarEvent, FlashSale, FlashSaleStatus } from "../lib/types";
 
@@ -344,7 +344,7 @@ export function Home() {
     setSearchLoading(true);
     setSearchError(null);
     try {
-      const all = await get<FlashSale[]>("/flash-sales?limit=500");
+      const all = await getAll<FlashSale>("/flash-sales");
       setAllSales(all);
     } catch (e: unknown) {
       setSearchError(e instanceof Error ? e.message : String(e));

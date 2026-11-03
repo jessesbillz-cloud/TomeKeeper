@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import { del, get, patch, post } from "../lib/api";
+import { del, getAll, patch, post } from "../lib/api";
 import type { Subscription } from "../lib/types";
 
 /**
@@ -96,7 +96,7 @@ export function Subscriptions() {
     setLoading(true);
     setError(null);
     try {
-      const data = await get<Subscription[]>("/subscriptions?limit=200");
+      const data = await getAll<Subscription>("/subscriptions");
       setSubs(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));

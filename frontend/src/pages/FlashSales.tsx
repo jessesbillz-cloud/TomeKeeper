@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { NotifyToggle } from "../components/NotifyToggle";
 import { flashSaleTargetFor } from "../lib/alerts";
 import { useAlerts } from "../lib/alertsContext";
-import { del, get, patch, post } from "../lib/api";
+import { del, get, getAll, patch, post } from "../lib/api";
 import type { FlashSale, FlashSaleStatus } from "../lib/types";
 
 /**
@@ -164,9 +164,9 @@ export function FlashSales() {
     setError(null);
     try {
       const path = showActiveOnly
-        ? "/flash-sales?active_only=true&limit=200"
-        : "/flash-sales?limit=200";
-      const data = await get<FlashSale[]>(path);
+        ? "/flash-sales?active_only=true"
+        : "/flash-sales";
+      const data = await getAll<FlashSale>(path);
       setSales(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
