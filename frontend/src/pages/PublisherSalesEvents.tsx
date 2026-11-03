@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { NotifyToggle } from "../components/NotifyToggle";
 import { publisherSaleTargetFor } from "../lib/alerts";
 import { useAlerts } from "../lib/alertsContext";
-import { del, get, getAll, patch, post } from "../lib/api";
+import { del, getAll, patch, post } from "../lib/api";
 import type { PublisherSalesEvent } from "../lib/types";
 
 type Form = {

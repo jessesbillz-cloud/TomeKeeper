@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { NotifyToggle } from "../components/NotifyToggle";
 import { flashSaleTargetFor } from "../lib/alerts";
 import { useAlerts } from "../lib/alertsContext";
-import { del, get, getAll, patch, post } from "../lib/api";
+import { del, getAll, patch, post } from "../lib/api";
 import type { FlashSale, FlashSaleStatus } from "../lib/types";
 
 /**
